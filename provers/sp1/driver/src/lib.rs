@@ -28,6 +28,7 @@ impl Prover for Sp1Prover {
         _output: &GuestOutput,
         _config: &ProverConfig,
     ) -> ProverResult<Proof> {
+        println!("Running SP1 prover");
         // Write the input.
         let mut stdin = SP1Stdin::new();
         stdin.write(&input);
@@ -43,6 +44,8 @@ impl Prover for Sp1Prover {
         client
             .verify(&proof, &vk)
             .expect("Sp1: verification failed");
+
+        println!("PROOF !");
 
         // Save the proof.
         let proof_dir = env::current_dir().expect("Sp1: dir error");
