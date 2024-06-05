@@ -46,6 +46,7 @@ impl Prover for Sp1Prover {
             .expect("Sp1: verification failed");
 
         println!("PROOF !");
+        // println!("PROOF mais en rouge !");
 
         // Save the proof.
         let proof_dir = env::current_dir().expect("Sp1: dir error");
