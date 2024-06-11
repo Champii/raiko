@@ -19,13 +19,6 @@ impl Prover for Sp1DistributedProver {
     ) -> ProverResult<Proof> {
         println!("Running SP1 Distributed prover");
 
-        let mut config = config.clone();
-
-        // Fixing the network and proof type to be forwarded to the workers
-        let mut_config = config.as_object_mut().unwrap();
-        mut_config.insert("network".to_string(), "taiko_a7".into());
-        mut_config.insert("proof_type".to_string(), "sp1_distributed".into());
-
         if config.get("sp1").map(|sp1| sp1.get("checkpoint")).is_some() {
             return Self::run_as_worker(input, output, &config).await;
         }
@@ -48,19 +41,32 @@ impl Sp1DistributedProver {
         let mut stdin = SP1Stdin::new();
         stdin.write(&input);
 
+        let ip_list = std::fs::read_to_string("distributed.json").unwrap();
+        let ip_list: Vec<String> = serde_json::from_str(&ip_list).unwrap();
+
         // Generate the proof for the given program.
         let client = ProverClient::new();
         let (_pk, vk) = client.setup(ELF);
 
         // Execute the program to get the public values and the number of checkpoints
-        let (nb_checkpoint, public_values) = client
-            .nb_checkpoints(ELF, stdin.clone())
+        let (nb_checkpoint, opts, public_values) = client
+            .nb_checkpoints(ELF, stdin.clone(), ip_list.len())
             .expect("Sp1: execution failed");
 
-        log::info!("Number of checkpoints: {}", nb_checkpoint);
+        let mut config = config.clone();
 
-        let ip_list = std::fs::read_to_string("distributed.json").unwrap();
-        let ip_list: Vec<String> = serde_json::from_str(&ip_list).unwrap();
+        // Fixing the network and proof type to be forwarded to the workers
+        let mut_config = config.as_object_mut().unwrap();
+        mut_config.insert("network".to_string(), "taiko_a7".into());
+        mut_config.insert("proof_type".to_string(), "sp1_distributed".into());
+        mut_config.insert(
+            "sp1".to_string(),
+            serde_json::json!({
+                "shard_batch_size": opts.shard_batch_size,
+            }),
+        );
+
+        log::info!("Number of checkpoints: {}", nb_checkpoint);
 
         let (queue_tx, queue_rx) = async_channel::unbounded();
         let (answer_tx, answer_rx) = async_channel::unbounded();
@@ -164,6 +170,16 @@ impl Sp1DistributedProver {
             .as_u64()
             .unwrap() as usize;
 
+        let shard_batch_size = config
+            .get("sp1")
+            .unwrap()
+            .as_object()
+            .unwrap()
+            .get("shard_batch_size")
+            .unwrap()
+            .as_u64()
+            .unwrap() as usize;
+
         println!("Running SP1 Distributed worker {}", checkpoint);
 
         let mut stdin = SP1Stdin::new();
@@ -174,7 +190,7 @@ impl Sp1DistributedProver {
         let (pk, _vk) = client.setup(ELF);
 
         let partial_proof = client
-            .prove_partial(&pk, stdin.clone(), checkpoint)
+            .prove_partial(&pk, stdin.clone(), shard_batch_size, checkpoint)
             .expect("Sp1: proving failed");
 
         to_proof(Ok(Sp1Response {
