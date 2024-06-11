@@ -65,12 +65,12 @@ impl Worker {
         let mut config = self.config.clone();
 
         let mut_config = config.as_object_mut().unwrap();
-        mut_config.insert(
-            "sp1".to_string(),
-            serde_json::json!({
-                "checkpoint": checkpoint,
-            }),
-        );
+        mut_config
+            .get_mut("sp1")
+            .unwrap()
+            .as_object_mut()
+            .unwrap()
+            .insert("checkpoint".to_string(), checkpoint.into());
 
         let now = std::time::Instant::now();
 
