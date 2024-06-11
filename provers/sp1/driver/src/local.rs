@@ -23,10 +23,8 @@ impl Prover for Sp1Prover {
         // Generate the proof for the given program.
         let client = ProverClient::new();
         let (pk, vk) = client.setup(ELF);
-        let mut proof = client.prove(&pk, stdin).expect("Sp1: proving failed");
+        let proof = client.prove(&pk, stdin).expect("Sp1: proving failed");
 
-        // Read the output.
-        let output = proof.public_values.read::<GuestOutput>();
         // Verify proof.
         client
             .verify(&proof, &vk)
@@ -44,10 +42,9 @@ impl Prover for Sp1Prover {
             )
             .expect("Sp1: saving proof failed");
 
-        println!("succesfully generated and verified proof for the program!");
+        println!("successfully generated and verified proof for the program!");
         to_proof(Ok(Sp1Response {
             proof: serde_json::to_string(&proof).unwrap(),
-            output,
         }))
     }
 }

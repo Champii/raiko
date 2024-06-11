@@ -95,6 +95,12 @@ impl Sp1DistributedProver {
             let partial_proof =
                 serde_json::from_str::<Vec<_>>(partial_proof_json.as_str()).unwrap();
 
+            std::fs::write(
+                format!("partial_proof_{}.json", checkpoint_id),
+                partial_proof_json,
+            )
+            .unwrap();
+
             proofs.push((checkpoint_id, partial_proof));
 
             if proofs.len() == nb_checkpoint {
@@ -110,14 +116,11 @@ impl Sp1DistributedProver {
             .flatten()
             .collect();
 
-        let mut proof = sp1_sdk::SP1ProofWithPublicValues {
+        let proof = sp1_sdk::SP1ProofWithPublicValues {
             proof: proofs,
             stdin: stdin.clone(),
             public_values,
         };
-
-        // Read the output.
-        let output = proof.public_values.read::<GuestOutput>();
 
         // Verify proof.
         client
@@ -143,13 +146,12 @@ impl Sp1DistributedProver {
 
         to_proof(Ok(Sp1Response {
             proof: serde_json::to_string(&proof).unwrap(),
-            output,
         }))
     }
 
     pub async fn run_as_worker(
         input: GuestInput,
-        output: &GuestOutput,
+        _output: &GuestOutput,
         config: &ProverConfig,
     ) -> ProverResult<Proof> {
         let checkpoint = config
@@ -177,7 +179,6 @@ impl Sp1DistributedProver {
 
         to_proof(Ok(Sp1Response {
             proof: serde_json::to_string(&partial_proof).unwrap(),
-            output: output.clone(),
         }))
     }
 }

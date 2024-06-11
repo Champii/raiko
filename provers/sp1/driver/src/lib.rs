@@ -1,6 +1,5 @@
 #![cfg(feature = "enable")]
 
-use raiko_lib::input::GuestOutput;
 use serde::{Deserialize, Serialize};
 
 mod distributed;
@@ -14,7 +13,6 @@ const ELF: &[u8] = include_bytes!("../../guest/elf/sp1-guest");
 #[derive(Clone, Serialize, Deserialize)]
 pub struct Sp1Response {
     pub proof: String,
-    pub output: GuestOutput,
 }
 
 #[cfg(test)]
