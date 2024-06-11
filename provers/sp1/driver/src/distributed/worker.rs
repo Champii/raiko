@@ -1,5 +1,5 @@
 use async_channel::{Receiver, Sender};
-use raiko_lib::prover::{ProverConfig, ProverResult};
+use raiko_lib::prover::ProverConfig;
 use serde_json::Value;
 
 use crate::Sp1Response;
@@ -82,10 +82,7 @@ impl Worker {
 
         match response_result {
             Ok(response) => {
-                println!("RESPONSE {:#?}", response);
-                let txt = response.text().await.unwrap();
-                println!("TXT {:#?}", txt);
-                let value: Value = serde_json::from_str(&txt).unwrap();
+                let value: Value = response.json().await.unwrap();
                 let sp1_response: Sp1Response =
                     serde_json::from_str(&value["data"].to_string()).unwrap();
 
