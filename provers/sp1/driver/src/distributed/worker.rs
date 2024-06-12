@@ -83,6 +83,7 @@ impl Worker {
         match response_result {
             Ok(response) => {
                 let value: Value = response.json().await.unwrap();
+                println!("Worker response {}", value.to_string());
                 let sp1_response: Sp1Response =
                     serde_json::from_str(&value["data"].to_string()).unwrap();
 
