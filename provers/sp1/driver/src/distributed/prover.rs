@@ -54,7 +54,6 @@ impl Sp1DistributedProver {
             .expect("Sp1: execution failed");
 
         let mut config = config.clone();
-        println!("Config: {:#?}", config);
 
         // Fixing the network and proof type to be forwarded to the workers
         let mut_config = config.as_object_mut().unwrap();
