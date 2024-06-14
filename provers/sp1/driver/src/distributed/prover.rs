@@ -58,9 +58,8 @@ impl Sp1DistributedProver {
         let program = Program::from(&pk.elf);
 
         // Execute the program to get the public values and the number of checkpoints
-        /* let (nb_checkpoint, opts, public_values) =
-        nb_checkpoints(ELF, &stdin, ip_list.len()).expect("Sp1: execution failed"); */
-        let opts = SP1CoreOpts::default();
+        let (_nb_checkpoint, opts, _public_values) =
+            nb_checkpoints(ELF, &stdin, ip_list.len()).expect("Sp1: execution failed");
 
         let proving_config = CoreSC::default();
 

@@ -73,30 +73,6 @@ impl Worker {
 
         let mut config = self.config.clone();
 
-        /* let mut_config = config.as_object_mut().unwrap();
-        mut_config
-            .get_mut("sp1")
-            .unwrap()
-            .as_object_mut()
-            .unwrap()
-            .insert("i".to_string(), i.into());
-        mut_config
-            .get_mut("sp1")
-            .unwrap()
-            .as_object_mut()
-            .unwrap()
-            .insert("checkpoint_data".to_string(), checkpoint.into());
-
-        mut_config
-            .get_mut("sp1")
-            .unwrap()
-            .as_object_mut()
-            .unwrap()
-            .insert(
-                "serialized_challenger".to_string(),
-                serialized_challenger.into(),
-            ); */
-
         println!(
             "CHECKPOINT+CHALLENGER SIZE: {}",
             checkpoint.len() + serialized_challenger.len()
