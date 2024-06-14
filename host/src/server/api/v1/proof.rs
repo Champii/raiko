@@ -110,7 +110,6 @@ async fn handle_partial_proof(
     let data: Bytes = if let Some(mut field) = multipart.next_field().await.unwrap() {
         println!("Field name: {:?}", field.name());
         println!("Field content type: {:?}", field.content_type());
-        println!("Field size: {:?}", field.size());
         field.bytes().await.unwrap()
     } else {
         return Err(HostError::InvalidRequestConfig("No data field".to_string()));
