@@ -114,11 +114,11 @@ async fn handle_partial_proof(
     };
 
     println!("Before deserialize");
-    let partial_proof_request_data: PartialProofRequestData =
-        bincode::deserialize_from(data.as_ref()).map_err(|e| {
-            inc_host_error(0);
-            HostError::Anyhow(e.into())
-        })?;
+    let partial_proof_request_data: PartialProofRequestData = bincode::deserialize(data.as_ref())
+        .map_err(|e| {
+        inc_host_error(0);
+        HostError::Anyhow(e.into())
+    })?;
 
     println!("After deserialize");
 
