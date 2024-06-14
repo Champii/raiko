@@ -9,7 +9,7 @@ use sp1_core::{runtime::Program, utils::SP1CoreOpts};
 use sp1_sdk::{CoreSC, ProverClient, SP1Stdin};
 
 use crate::{
-    sp1_specifics::{nb_checkpoints, prove_partial},
+    sp1_specifics::{compute_trace_and_challenger, nb_checkpoints, prove_partial},
     Sp1Response, ELF,
 };
 
@@ -50,11 +50,18 @@ impl Sp1DistributedProver {
 
         // Generate the proof for the given program.
         let client = ProverClient::new();
-        let (_pk, vk) = client.setup(ELF);
+        let (pk, vk) = client.setup(ELF);
+
+        let program = Program::from(&pk.elf);
 
         // Execute the program to get the public values and the number of checkpoints
         let (nb_checkpoint, opts, public_values) =
             nb_checkpoints(ELF, &stdin, ip_list.len()).expect("Sp1: execution failed");
+
+        let proving_config = CoreSC::default();
+
+        let (checkpoints, serialized_challenger) =
+            compute_trace_and_challenger(program, &stdin, proving_config, opts).unwrap();
 
         let mut config = config.clone();
 
@@ -91,8 +98,13 @@ impl Sp1DistributedProver {
         }
 
         // Send the checkpoints to the workers
-        for i in 0..nb_checkpoint {
-            queue_tx.send(i).await.unwrap();
+        // for i in 0..nb_checkpoint {
+        for (i, checkpoint) in checkpoints.into_iter().enumerate() {
+            let serialized_checkpoint = bincode::serialize(&checkpoint).unwrap();
+            queue_tx
+                .send((i, serialized_checkpoint, serialized_challenger.clone()))
+                .await
+                .unwrap();
         }
 
         let mut proofs = Vec::new();
@@ -171,6 +183,17 @@ impl Sp1DistributedProver {
             .unwrap()
             .as_u64()
             .unwrap() as usize;
+        let checkpoint_data =
+            serde_json::from_str(&sp1_config.get("checkpoint_data").unwrap().as_str().unwrap())
+                .unwrap();
+        let serialized_challenger = serde_json::from_str(
+            sp1_config
+                .get("serialized_challenger")
+                .unwrap()
+                .as_str()
+                .unwrap(),
+        )
+        .unwrap();
 
         println!("Running SP1 Distributed worker {}", checkpoint);
 
@@ -186,8 +209,16 @@ impl Sp1DistributedProver {
         let mut opts = SP1CoreOpts::default();
         opts.shard_batch_size = shard_batch_size;
 
-        let partial_proof =
-            prove_partial(program, &stdin, config, opts, checkpoint).expect("Sp1: proving failed");
+        let partial_proof = prove_partial(
+            program,
+            &stdin,
+            config,
+            opts,
+            checkpoint_data,
+            serialized_challenger,
+            checkpoint,
+        )
+        .expect("Sp1: proving failed");
 
         to_proof(Ok(Sp1Response {
             proof: serde_json::to_string(&partial_proof).unwrap(),

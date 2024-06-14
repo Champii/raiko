@@ -39,10 +39,22 @@ mod sp1_specifics {
     use std::io::Write;
     use std::time::Instant;
 
+    use p3_baby_bear::BabyBear;
+    use p3_baby_bear::DiffusionMatrixBabyBear;
     use p3_challenger::CanObserve;
+    use p3_challenger::DuplexChallenger;
     use p3_field::PrimeField32;
-    use serde::{de::DeserializeOwned, Serialize};
+    use p3_poseidon2::Poseidon2ExternalMatrixGeneral;
+    use serde::ser::SerializeStruct;
+    use serde::ser::SerializeTuple;
+    use serde::Serializer;
+    use serde::{de::DeserializeOwned, Deserialize, Serialize};
+    use serde_remote::deserialize_duplex_challenger;
+    use serde_remote::serialize_duplex_challenger;
     use sp1_core::runtime::ExecutionRecord;
+    use sp1_core::utils::baby_bear_poseidon2::Perm;
+    use sp1_core::utils::baby_bear_poseidon2::Val;
+    use sp1_core::utils::BabyBearPoseidon2;
     use sp1_core::{
         runtime::{ExecutionError, Program, Runtime, ShardingConfig},
         stark::{
@@ -52,6 +64,168 @@ mod sp1_specifics {
         utils::{SP1CoreOpts, SP1CoreProverError},
     };
     use sp1_sdk::{SP1PublicValues, SP1Stdin};
+
+    use crate::ELF;
+
+    mod serde_remote {
+        use super::{Perm, Val};
+        use p3_baby_bear::{BabyBear, DiffusionMatrixBabyBear};
+        use p3_challenger::DuplexChallenger;
+        use p3_poseidon2::{Poseidon2, Poseidon2ExternalMatrixGeneral};
+        use p3_symmetric::{CryptographicPermutation, Hash};
+        use serde::{ser::SerializeTuple, Serializer};
+        pub use serde::{Deserialize, Serialize};
+
+        #[derive(Copy, Clone, Default, Eq, Hash, PartialEq, Serialize, Deserialize)]
+        #[repr(transparent)] // `PackedBabyBearNeon` relies on this!
+        pub struct BabyBearRemote {
+            // This is `pub(crate)` just for tests. If you're accessing `value` outside of those, you're
+            // likely doing something fishy.
+            pub value: u32,
+        }
+
+        fn babybear_to_babybearremote(babybear: BabyBear) -> BabyBearRemote {
+            unsafe { std::mem::transmute(babybear) }
+        }
+
+        fn babybearremote_to_babybear(babybear_remote: BabyBearRemote) -> BabyBear {
+            unsafe { std::mem::transmute(babybear_remote) }
+        }
+
+        #[derive(Default, Clone, Serialize, Deserialize)]
+        pub struct Poseidon2ExternalMatrixGeneralRemote;
+
+        #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+        pub struct DiffusionMatrixBabyBearRemote;
+
+        #[derive(Clone, Serialize, Deserialize)]
+        pub struct Poseidon2Remote {
+            pub rounds_f: usize,
+            /* #[serde(serialize_with = "serialize_external_constants")]
+            #[serde(deserialize_with = "deserialize_external_constants")] */
+            pub external_constants: Vec<[BabyBearRemote; 16]>,
+            pub external_linear_layer: Poseidon2ExternalMatrixGeneralRemote,
+            pub rounds_p: usize,
+            pub internal_constants: Vec<BabyBearRemote>,
+            pub internal_linear_layer: DiffusionMatrixBabyBearRemote,
+        }
+
+        fn poseidon2_to_poseidon2remote(
+            poseidon2: Poseidon2<
+                BabyBear,
+                Poseidon2ExternalMatrixGeneral,
+                DiffusionMatrixBabyBear,
+                16,
+                7,
+            >,
+        ) -> Poseidon2Remote {
+            // transmute
+            unsafe { std::mem::transmute(poseidon2) }
+        }
+
+        fn poseidon2remote_to_poseidon2(
+            poseidon2_remote: Poseidon2Remote,
+        ) -> Poseidon2<BabyBear, Poseidon2ExternalMatrixGeneral, DiffusionMatrixBabyBear, 16, 7>
+        {
+            // transmute
+            unsafe { std::mem::transmute(poseidon2_remote) }
+        }
+
+        #[derive(Clone, Serialize, Deserialize)]
+        pub struct DuplexChallengerRemote {
+            pub sponge_state: [BabyBearRemote; 16],
+            pub input_buffer: Vec<BabyBearRemote>,
+            pub output_buffer: Vec<BabyBearRemote>,
+            pub permutation: Poseidon2Remote,
+        }
+
+        fn duplexchallenge_to_duplexchallengerremote(
+            duplex_challenger: DuplexChallenger<
+                BabyBear,
+                Poseidon2<BabyBear, Poseidon2ExternalMatrixGeneral, DiffusionMatrixBabyBear, 16, 7>,
+                16,
+                8,
+            >,
+        ) -> DuplexChallengerRemote {
+            // transmute
+            unsafe { std::mem::transmute(duplex_challenger) }
+        }
+
+        fn duplexchallengerremote_to_duplexchallenger(
+            duplex_challenger_remote: DuplexChallengerRemote,
+        ) -> DuplexChallenger<
+            BabyBear,
+            Poseidon2<BabyBear, Poseidon2ExternalMatrixGeneral, DiffusionMatrixBabyBear, 16, 7>,
+            16,
+            8,
+        > {
+            // transmute
+            unsafe { std::mem::transmute(duplex_challenger_remote) }
+        }
+
+        pub fn serialize_duplex_challenger(
+            duplex_challenger: &DuplexChallenger<Val, Perm, 16, 8>,
+        ) -> Vec<u8> {
+            let transmuted = duplexchallenge_to_duplexchallengerremote(duplex_challenger.clone());
+            bincode::serialize(&transmuted).unwrap()
+        }
+
+        pub fn deserialize_duplex_challenger(
+            serialized: Vec<u8>,
+        ) -> DuplexChallenger<Val, Perm, 16, 8> {
+            let transmuted: DuplexChallengerRemote = bincode::deserialize(&serialized).unwrap();
+            duplexchallengerremote_to_duplexchallenger(transmuted)
+        }
+
+        /* fn serialize_sponge_state<const WIDTH: usize, S, T>(
+            t: &[T; WIDTH],
+            serializer: S,
+        ) -> Result<S::Ok, S::Error>
+        where
+            S: Serializer,
+            T: Serialize,
+        {
+            let mut ser_tuple = serializer.serialize_seq(Some(WIDTH))?;
+            for elem in t {
+                ser_tuple.serialize_element(elem)?;
+            }
+            ser_tuple.end()
+        }
+
+        fn deserialize_sponge_state<'de, T, const WIDTH: usize, D>(
+            deserializer: D,
+        ) -> Result<[T; WIDTH], D::Error>
+        where
+            D: serde::Deserializer<'de>,
+            T: Deserialize<'de>,
+        {
+            deserializer.deserialize_seq(SpongeStateVisitor::<T, WIDTH>)
+        }
+
+        fn serialize_external_constants<const WIDTH: usize, S, T>(
+            t: &Vec<[T; WIDTH]>,
+            serializer: S,
+        ) -> Result<S::Ok, S::Error>
+        where
+            S: Serializer,
+            T: Serialize,
+        {
+            let serialized_inner = t.iter().map(|x| serialize_sponge_state(x, serializer));
+
+            t.serialize(serializer)
+        }
+
+        fn deserialize_external_constants<'de, T, const WIDTH: usize, D>(
+            deserializer: D,
+        ) -> Result<Vec<[T; WIDTH]>, D::Error>
+        where
+            D: serde::Deserializer<'de>,
+            T: Deserialize<'de>,
+        {
+            let deserialized_inner = Vec::<[T; WIDTH]>::deserialize(deserializer)?;
+            Ok(deserialized_inner)
+        } */
+    }
 
     fn trace_checkpoint(program: Program, file: &File, opts: SP1CoreOpts) -> ExecutionRecord {
         let mut reader = std::io::BufReader::new(file);
@@ -111,21 +285,139 @@ mod sp1_specifics {
         ))
     }
 
-    pub fn prove_partial<SC: StarkGenericConfig + Send + Sync>(
+    //impl serialize for [F; WIDTH]
+    /* impl<F, P, const WIDTH: usize, const RATE: usize> Serialize
+        for DuplexChallengerCopy<F, P, WIDTH, RATE>
+    where
+        F: Clone,
+        P: CryptographicPermutation<[F; WIDTH]>,
+    {
+        fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+        where
+            S: serde::Serializer,
+        {
+            let serie = serializer.serialize_struct("DuplexChallengerCopy", 4)?;
+            serie.serialize_field("sponge_state", &self.sponge_state)?;
+            serie.serialize_field("input_buffer", &self.input_buffer)?;
+            serie.serialize_field("output_buffer", &self.output_buffer)?;
+            serie.serialize_field("permutation", &self.permutation)?;
+            serie.end()
+            /* DuplexChallengerCopy::<F, P, WIDTH, RATE> {
+                sponge_state: self.sponge_state.clone(),
+                input_buffer: self.input_buffer.clone(),
+                output_buffer: self.output_buffer.clone(),
+                permutation: self.permutation.clone(),
+            }
+            .serialize(serializer) */
+        }
+    }
+
+    //impl deserialize for [F; WIDTH]
+    impl<'de, F, P, const WIDTH: usize, const RATE: usize> Deserialize<'de>
+        for DuplexChallengerCopy<F, P, WIDTH, RATE>
+    where
+        F: Clone,
+        P: CryptographicPermutation<[F; WIDTH]>,
+    {
+        fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+        where
+            D: serde::Deserializer<'de>,
+        {
+            let duplex_challenger_copy =
+                DuplexChallengerCopy::<F, P, WIDTH, RATE>::deserialize(deserializer)?;
+            Ok(duplex_challenger_copy)
+        }
+    } */
+
+    /* fn serialize_duplex_challenger(
+           duplex_challenger: &DuplexChallenger<Val, Perm, 16, 8>,
+       ) -> Vec<u8> {
+           let duplex_challenger_copy = DuplexChallengerRemote::<Val, Perm, 16, 8> {
+               sponge_state: duplex_challenger.sponge_state.clone(),
+               input_buffer: duplex_challenger.input_buffer.clone(),
+               output_buffer: duplex_challenger.output_buffer.clone(),
+               permutation: duplex_challenger.permutation.clone(),
+           };
+           bincode::serialize(&duplex_challenger_copy).unwrap()
+       }
+
+       fn deserialize_duplex_challenger(serialized: Vec<u8>) -> DuplexChallenger<Val, Perm, 16, 8> {
+           let duplex_challenger_copy: DuplexChallengerRemote<Val, Perm, 16, 8> =
+               bincode::deserialize(&serialized).unwrap();
+           DuplexChallenger::<Val, Perm, 16, 8> {
+               sponge_state: duplex_challenger_copy.sponge_state,
+               input_buffer: duplex_challenger_copy.input_buffer,
+               output_buffer: duplex_challenger_copy.output_buffer,
+               permutation: duplex_challenger_copy.permutation,
+           }
+       }
+    */
+    /* pub type Val = BabyBear;
+    pub type Perm = Poseidon2<Val, Poseidon2ExternalMatrixGeneral, DiffusionMatrixBabyBear, 16, 7>;
+    #[derive(Clone, Debug)]
+    pub struct DuplexChallenger<F, P, const WIDTH: usize, const RATE: usize>
+    where
+        F: Clone,
+        P: CryptographicPermutation<[F; WIDTH]>,
+    {
+        pub sponge_state: [F; WIDTH],
+        pub input_buffer: Vec<F>,
+        pub output_buffer: Vec<F>,
+        pub permutation: P,
+    }
+
+    impl<F, P, const WIDTH: usize, const RATE: usize> DuplexChallenger<F, P, WIDTH, RATE>
+    where
+        F: Copy,
+        P: CryptographicPermutation<[F; WIDTH]>,
+    {
+        pub fn new(permutation: P) -> Self
+        where
+            F: Default,
+        {
+            Self {
+                sponge_state: [F::default(); WIDTH],
+                input_buffer: vec![],
+                output_buffer: vec![],
+                permutation,
+            }
+        }
+
+        fn duplexing(&mut self) {
+            assert!(self.input_buffer.len() <= RATE);
+
+            // Overwrite the first r elements with the inputs.
+            for (i, val) in self.input_buffer.drain(..).enumerate() {
+                self.sponge_state[i] = val;
+            }
+
+            // Apply the permutation.
+            self.permutation.permute_mut(&mut self.sponge_state);
+
+            self.output_buffer.clear();
+            self.output_buffer.extend(self.sponge_state);
+        }
+    }
+
+    impl<F, P, const N: usize, const WIDTH: usize, const RATE: usize> CanObserve<Hash<F, F, N>>
+        for DuplexChallenger<F, P, WIDTH, RATE>
+    where
+        F: Copy,
+        P: CryptographicPermutation<[F; WIDTH]>,
+    {
+        fn observe(&mut self, values: Hash<F, F, N>) {
+            for value in values {
+                self.observe(value);
+            }
+        }
+    } */
+
+    pub fn compute_trace_and_challenger(
         program: Program,
         stdin: &SP1Stdin,
-        config: SC,
+        config: BabyBearPoseidon2,
         opts: SP1CoreOpts,
-        checkpoint_id: usize,
-    ) -> Result<Vec<ShardProof<SC>>, SP1CoreProverError>
-    where
-        SC::Challenger: Clone,
-        OpeningProof<SC>: Send + Sync,
-        Com<SC>: Send + Sync,
-        PcsProverData<SC>: Send + Sync,
-        ShardMainData<SC>: Serialize + DeserializeOwned,
-        <SC as StarkGenericConfig>::Val: PrimeField32,
-    {
+    ) -> Result<(Vec<Vec<ExecutionRecord>>, Vec<u8>), SP1CoreProverError> {
         let proving_start = Instant::now();
 
         // Execute the program.
@@ -138,24 +430,6 @@ mod sp1_specifics {
         // Setup the machine.
         let machine = RiscvAir::machine(config);
         let (pk, vk) = machine.setup(runtime.program.as_ref());
-
-        // If we don't need to batch, we can just run the program normally and prove it.
-        /* if opts.shard_batch_size == 0 {
-            // Execute the runtime and collect all the events..
-            runtime.run().map_err(SP1CoreProverError::ExecutionError)?;
-
-            // If debugging is enabled, we will also debug the constraints.
-            #[cfg(feature = "debug")]
-            {
-                let mut challenger = machine.config().challenger();
-                machine.debug_constraints(&pk, runtime.record.clone(), &mut challenger);
-            }
-
-            // Generate the proof and return the proof and public values.
-            let public_values = std::mem::take(&mut runtime.state.public_values_stream);
-            let proof = prove_simple(machine.config().clone(), runtime)?;
-            return Ok(proof);
-        } */
 
         // Execute the program, saving checkpoints at the start of every `shard_batch_size` cycle range.
         let mut checkpoints = Vec::new();
@@ -175,6 +449,8 @@ mod sp1_specifics {
             tempfile
                 .seek(std::io::SeekFrom::Start(0))
                 .map_err(SP1CoreProverError::IoError)?;
+            println!("CHECKPOINT SIZE: {}", tempfile.metadata().unwrap().len());
+
             checkpoints.push(tempfile);
 
             // If we've reached the final checkpoint, break out of the loop.
@@ -190,8 +466,11 @@ mod sp1_specifics {
         // For each checkpoint, generate events, shard them, commit shards, and observe in challenger.
         let sharding_config = ShardingConfig::default();
         let mut shard_main_datas = Vec::new();
-        let mut challenger = machine.config().challenger();
-        vk.observe_into(&mut challenger);
+        let machine_config = machine.config();
+        let mut challenger: DuplexChallenger<Val, Perm, 16, 8> =
+            DuplexChallenger::new(machine_config.perm.clone());
+        // let mut challenger = machine.config().challenger();
+        // vk.observe_into(&mut challenger);
 
         let mut checkpoint_shards_vec = Vec::new();
 
@@ -212,14 +491,132 @@ mod sp1_specifics {
             // Observe the commitments.
             for (commitment, shard) in commitments.into_iter().zip(checkpoint_shards.iter()) {
                 challenger.observe(commitment);
-                challenger
-                    .observe_slice(&shard.public_values::<SC::Val>()[0..machine.num_pv_elts()]);
+                challenger.observe_slice(&shard.public_values::<Val>()[0..machine.num_pv_elts()]);
             }
             checkpoint_shards_vec.push(checkpoint_shards);
         }
 
+        let serialized_challenger = serialize_duplex_challenger(&challenger);
+
+        println!("CHALLENGER SIZE: {}", serialized_challenger.len());
+
+        Ok((checkpoint_shards_vec, serialized_challenger))
+    }
+
+    pub fn prove_partial(
+        program: Program,
+        stdin: &SP1Stdin,
+        config: BabyBearPoseidon2,
+        opts: SP1CoreOpts,
+        checkpoint: Vec<ExecutionRecord>,
+        serialized_challenger: Vec<u8>,
+        checkpoint_id: usize,
+    ) -> Result<Vec<ShardProof<BabyBearPoseidon2>>, SP1CoreProverError>
+/* where
+        SC::Challenger: Clone,
+        OpeningProof<SC>: Send + Sync,
+        Com<SC>: Send + Sync,
+        PcsProverData<SC>: Send + Sync,
+        ShardMainData<SC>: Serialize + DeserializeOwned,
+        <SC as StarkGenericConfig>::Val: PrimeField32, */ {
+        let proving_start = Instant::now();
+
+        /* // Execute the program.
+        let mut runtime = Runtime::new(program.clone(), opts);
+        runtime.write_vecs(&stdin.buffer);
+        for proof in stdin.proofs.iter() {
+            runtime.write_proof(proof.0.clone(), proof.1.clone());
+        } */
+
+        // Setup the machine.
+        let machine = RiscvAir::machine(config);
+        let (pk, vk) = machine.setup(&program);
+
+        // If we don't need to batch, we can just run the program normally and prove it.
+        /* if opts.shard_batch_size == 0 {
+            // Execute the runtime and collect all the events..
+            runtime.run().map_err(SP1CoreProverError::ExecutionError)?;
+
+            // If debugging is enabled, we will also debug the constraints.
+            #[cfg(feature = "debug")]
+            {
+                let mut challenger = machine.config().challenger();
+                machine.debug_constraints(&pk, runtime.record.clone(), &mut challenger);
+            }
+
+            // Generate the proof and return the proof and public values.
+            let public_values = std::mem::take(&mut runtime.state.public_values_stream);
+            let proof = prove_simple(machine.config().clone(), runtime)?;
+            return Ok(proof);
+        } */
+
+        /* // Execute the program, saving checkpoints at the start of every `shard_batch_size` cycle range.
+        let mut checkpoints = Vec::new();
+        let (_public_values_stream, public_values) = loop {
+            // Execute the runtime until we reach a checkpoint.
+            let (checkpoint, done) = runtime
+                .execute_state()
+                .map_err(SP1CoreProverError::ExecutionError)?;
+
+            // Save the checkpoint to a temp file.
+            let mut tempfile = tempfile::tempfile().map_err(SP1CoreProverError::IoError)?;
+            let mut writer = std::io::BufWriter::new(&mut tempfile);
+            bincode::serialize_into(&mut writer, &checkpoint)
+                .map_err(SP1CoreProverError::SerializationError)?;
+            writer.flush().map_err(SP1CoreProverError::IoError)?;
+            drop(writer);
+            tempfile
+                .seek(std::io::SeekFrom::Start(0))
+                .map_err(SP1CoreProverError::IoError)?;
+            println!("CHECKPOINT SIZE: {}", tempfile.metadata().unwrap().len());
+
+            checkpoints.push(tempfile);
+
+            // If we've reached the final checkpoint, break out of the loop.
+            if done {
+                break (
+                    std::mem::take(&mut runtime.state.public_values_stream),
+                    runtime.record.public_values,
+                );
+            }
+        };
+        println!("CHECKPOINTS: {}", checkpoints.len());
+
+        // For each checkpoint, generate events, shard them, commit shards, and observe in challenger.
+        let sharding_config = ShardingConfig::default();
+        let mut shard_main_datas = Vec::new();
+        let machine_config = machine.config();
+        let mut challenger: DuplexChallenger<Val, Perm, 16, 8> =
+            DuplexChallenger::new(machine_config.perm.clone());
+        // let mut challenger = machine.config().challenger();
+        // vk.observe_into(&mut challenger);
+
+        let mut checkpoint_shards_vec = Vec::new();
+
+        for checkpoint_file in checkpoints.iter_mut() {
+            let mut record = trace_checkpoint(program.clone(), checkpoint_file, opts);
+            record.public_values = public_values;
+            reset_seek(&mut *checkpoint_file);
+
+            // Shard the record into shards.
+            let checkpoint_shards =
+                tracing::info_span!("shard").in_scope(|| machine.shard(record, &sharding_config));
+
+            // Commit to each shard.
+            let (commitments, commit_data) = tracing::info_span!("commit")
+                .in_scope(|| LocalProver::commit_shards(&machine, &checkpoint_shards, opts));
+            shard_main_datas.push(commit_data);
+
+            // Observe the commitments.
+            for (commitment, shard) in commitments.into_iter().zip(checkpoint_shards.iter()) {
+                challenger.observe(commitment);
+                challenger.observe_slice(&shard.public_values::<Val>()[0..machine.num_pv_elts()]);
+            }
+            checkpoint_shards_vec.push(checkpoint_shards);
+        } */
+
         // For each checkpoint, generate events and shard again, then prove the shards.
-        let mut shard_proofs = Vec::<ShardProof<SC>>::new();
+        let mut shard_proofs = Vec::<ShardProof<BabyBearPoseidon2>>::new();
         // let mut checkpoint_file = checkpoints.into_iter().nth(checkpoint_id).unwrap();
 
         /* let checkpoint_shards = {
@@ -229,11 +626,10 @@ mod sp1_specifics {
             tracing::debug_span!("shard").in_scope(|| machine.shard(events, &sharding_config))
         }; */
 
+        let mut challenger = deserialize_duplex_challenger(serialized_challenger);
+
         log::info!("Starting proof shard");
-        let mut checkpoint_proofs = checkpoint_shards_vec
-            .into_iter()
-            .nth(checkpoint_id)
-            .unwrap()
+        let mut checkpoint_proofs = checkpoint
             .into_iter()
             .map(|shard| {
                 let config = machine.config();
@@ -264,13 +660,13 @@ mod sp1_specifics {
 
         // Print the summary.
         let proving_time = proving_start.elapsed().as_secs_f64();
-        tracing::info!(
+        /* tracing::info!(
             "summary: cycles={}, e2e={}, khz={:.2}, proofSize={}",
             runtime.state.global_clk,
             proving_time,
             (runtime.state.global_clk as f64 / proving_time as f64),
             bincode::serialize(&shard_proofs).unwrap().len(),
-        );
+        ); */
 
         Ok(shard_proofs)
     }

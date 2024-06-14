@@ -63,6 +63,9 @@ sp1-core = { path = "../sp1/core" }
 # Plonky3
 p3-field = { git = "https://github.com/Plonky3/Plonky3.git", rev = "3b5265f9d5af36534a46caebf0617595cfb42c5a" }
 p3-challenger = { git = "https://github.com/Plonky3/Plonky3.git", rev = "3b5265f9d5af36534a46caebf0617595cfb42c5a" }
+p3-poseidon2 = { git = "https://github.com/Plonky3/Plonky3.git", rev = "3b5265f9d5af36534a46caebf0617595cfb42c5a" }
+p3-baby-bear = { git = "https://github.com/Plonky3/Plonky3.git", rev = "3b5265f9d5af36534a46caebf0617595cfb42c5a" }
+p3-symmetric = { git = "https://github.com/Plonky3/Plonky3.git", rev = "3b5265f9d5af36534a46caebf0617595cfb42c5a" }
 
 
 # alloy

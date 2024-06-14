@@ -12,11 +12,11 @@ pub struct Worker {
     /// The config to send to the worker
     config: ProverConfig,
     /// A queue to receive the checkpoint to compute the partial proof
-    queue: Receiver<usize>,
+    queue: Receiver<(usize, Vec<u8>, Vec<u8>)>,
     /// A channel to send back the id of the checkpoint along with the json strings encoding the computed partial proofs
     answer: Sender<(usize, String)>,
     /// if an error occured, send the checkpoint back in the queue for another worker to pick it up
-    queue_push_back: Sender<usize>,
+    queue_push_back: Sender<(usize, Vec<u8>, Vec<u8>)>,
 }
 
 impl Worker {
@@ -24,9 +24,9 @@ impl Worker {
         id: usize,
         url: String,
         config: ProverConfig,
-        queue: Receiver<usize>,
+        queue: Receiver<(usize, Vec<u8>, Vec<u8>)>,
         answer: Sender<(usize, String)>,
-        queue_push_back: Sender<usize>,
+        queue_push_back: Sender<(usize, Vec<u8>, Vec<u8>)>,
     ) -> Self {
         Worker {
             id,
@@ -39,14 +39,19 @@ impl Worker {
     }
 
     pub async fn run(&self) {
-        while let Ok(checkpoint) = self.queue.recv().await {
+        while let Ok((i, checkpoint, serialized_challenger)) = self.queue.recv().await {
             // Compute the partial proof
-            let partial_proof_result = self.send_work(checkpoint).await;
+            let partial_proof_result = self
+                .send_work(i, checkpoint.clone(), serialized_challenger.clone())
+                .await;
 
             match partial_proof_result {
-                Ok(partial_proof) => self.answer.send((checkpoint, partial_proof)).await.unwrap(),
+                Ok(partial_proof) => self.answer.send((i, partial_proof)).await.unwrap(),
                 Err(_e) => {
-                    self.queue_push_back.send(checkpoint).await.unwrap();
+                    self.queue_push_back
+                        .send((i, checkpoint, serialized_challenger))
+                        .await
+                        .unwrap();
 
                     break;
                 }
@@ -54,10 +59,15 @@ impl Worker {
         }
     }
 
-    async fn send_work(&self, checkpoint: usize) -> Result<String, reqwest::Error> {
+    async fn send_work(
+        &self,
+        i: usize,
+        checkpoint: Vec<u8>,
+        serialized_challenger: Vec<u8>,
+    ) -> Result<String, reqwest::Error> {
         log::info!(
-            "Sending checkpoint {} to worker {}: {}",
-            checkpoint,
+            "Sending checkpoint to worker {}: {}",
+            // checkpoint,
             self.id,
             self.url
         );
@@ -70,7 +80,23 @@ impl Worker {
             .unwrap()
             .as_object_mut()
             .unwrap()
+            .insert("i".to_string(), i.into());
+        mut_config
+            .get_mut("sp1")
+            .unwrap()
+            .as_object_mut()
+            .unwrap()
             .insert("checkpoint".to_string(), checkpoint.into());
+
+        mut_config
+            .get_mut("sp1")
+            .unwrap()
+            .as_object_mut()
+            .unwrap()
+            .insert(
+                "serialized_challenger".to_string(),
+                serialized_challenger.into(),
+            );
 
         let now = std::time::Instant::now();
 
@@ -87,8 +113,8 @@ impl Worker {
                     serde_json::from_str(&value["data"].to_string()).unwrap();
 
                 log::info!(
-                    "Received proof for checkpoint {} from worker {}: {} in {}s",
-                    checkpoint,
+                    "Received proof for checkpoint  from worker {}: {} in {}s",
+                    // checkpoint,
                     self.id,
                     self.url,
                     now.elapsed().as_secs()
