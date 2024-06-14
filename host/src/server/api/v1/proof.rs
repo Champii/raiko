@@ -107,18 +107,16 @@ async fn handle_partial_proof(
     mut multipart: Multipart,
 ) -> HostResult<ProofResponse> {
     println!("Handling partial proof");
-    let mut data;
+    let mut data = Bytes::new();
     while let Some(mut field) = multipart.next_field().await.unwrap() {
         println!("Field name: {:?}", field.name());
         println!("Field content type: {:?}", field.content_type());
-        if field.name() == "FileData" {
+        if let Some("FileData") = field.name() {
             data = field.bytes().await.unwrap();
 
             break;
         }
-    } else {
-        return Err(HostError::InvalidRequestConfig("No data field".to_string()));
-    };
+    }
 
     println!("Before deserialize");
     let partial_proof_request_data: PartialProofRequestData = bincode::deserialize(data.as_ref())
