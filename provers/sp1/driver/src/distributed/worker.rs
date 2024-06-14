@@ -86,7 +86,7 @@ impl Worker {
             .unwrap()
             .as_object_mut()
             .unwrap()
-            .insert("checkpoint".to_string(), checkpoint.into());
+            .insert("checkpoint_data".to_string(), checkpoint.into());
 
         mut_config
             .get_mut("sp1")

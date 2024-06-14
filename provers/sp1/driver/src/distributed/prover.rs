@@ -177,7 +177,7 @@ impl Sp1DistributedProver {
     ) -> ProverResult<Proof> {
         let sp1_config = config.get("sp1").unwrap().as_object().unwrap();
 
-        let checkpoint = sp1_config.get("checkpoint").unwrap().as_u64().unwrap() as usize;
+        let checkpoint = sp1_config.get("i").unwrap().as_u64().unwrap() as usize;
         let shard_batch_size = sp1_config
             .get("shard_batch_size")
             .unwrap()
