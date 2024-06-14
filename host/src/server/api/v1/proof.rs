@@ -107,7 +107,7 @@ async fn handle_partial_proof(
     mut multipart: Multipart,
 ) -> HostResult<ProofResponse> {
     println!("Handling partial proof");
-    let data = if let Some(mut field) = multipart.next_field().await.unwrap() {
+    let data: Bytes = if let Some(mut field) = multipart.next_field().await.unwrap() {
         field.bytes().await.unwrap()
     } else {
         return Err(HostError::InvalidRequestConfig("No data field".to_string()));
