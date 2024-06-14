@@ -42,17 +42,15 @@ impl Worker {
     pub async fn run(&self) {
         while let Ok((i, checkpoint, serialized_challenger)) = self.queue.recv().await {
             // Compute the partial proof
-            let partial_proof_result = self
-                .send_work(i, checkpoint.clone(), serialized_challenger.clone())
-                .await;
+            let partial_proof_result = self.send_work(i, checkpoint, serialized_challenger).await;
 
             match partial_proof_result {
                 Ok(partial_proof) => self.answer.send((i, partial_proof)).await.unwrap(),
                 Err(_e) => {
-                    self.queue_push_back
-                        .send((i, checkpoint, serialized_challenger))
-                        .await
-                        .unwrap();
+                    /* self.queue_push_back
+                    .send((i, checkpoint, serialized_challenger))
+                    .await
+                    .unwrap(); */
 
                     break;
                 }

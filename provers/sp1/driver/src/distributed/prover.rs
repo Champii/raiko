@@ -104,7 +104,9 @@ impl Sp1DistributedProver {
         // Send the checkpoints to the workers
         // for i in 0..nb_checkpoint {
         for (i, checkpoint) in checkpoints.iter().enumerate() {
+            log::info!("Serializing checkpoint {}", i);
             let serialized_checkpoint = bincode::serialize(checkpoint).unwrap();
+            log::info!("Sending checkpoint {}", i);
             queue_tx
                 .send((i, serialized_checkpoint, serialized_challenger.clone()))
                 .await
