@@ -43,7 +43,7 @@ pub mod utils;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PartialProofRequestData {
-    pub request: Value,
+    pub request: String,
     pub checkpoint_id: usize,
     pub checkpoint_data: Vec<u8>,
     pub serialized_challenger: Vec<u8>,

@@ -102,7 +102,7 @@ impl Worker {
             checkpoint.len() + serialized_challenger.len()
         );
         let req = PartialProofRequestData {
-            request: config,
+            request: config.to_string(),
             checkpoint_id: i,
             checkpoint_data: checkpoint,
             serialized_challenger,

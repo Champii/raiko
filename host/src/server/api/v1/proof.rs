@@ -121,7 +121,9 @@ async fn handle_partial_proof(
     // Override the existing proof request config from the config file and command line
     // options with the request from the client.
     let mut config = opts.proof_request_opt.clone();
-    config.merge(&partial_proof_request_data.request)?;
+    let request: Value = serde_json::from_str(&partial_proof_request_data.request)
+        .map_err(|e| HostError::Anyhow(e.into()))?;
+    config.merge(&request)?;
 
     // Construct the actual proof request from the available configs.
     let proof_request = ProofRequest::try_from(config)?;
