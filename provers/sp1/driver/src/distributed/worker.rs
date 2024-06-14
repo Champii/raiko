@@ -1,5 +1,6 @@
 use async_channel::{Receiver, Sender};
 use raiko_lib::prover::ProverConfig;
+use raiko_lib::PartialProofRequestData;
 use serde_json::Value;
 
 use crate::Sp1Response;
@@ -74,7 +75,7 @@ impl Worker {
 
         let mut config = self.config.clone();
 
-        let mut_config = config.as_object_mut().unwrap();
+        /* let mut_config = config.as_object_mut().unwrap();
         mut_config
             .get_mut("sp1")
             .unwrap()
@@ -96,19 +97,44 @@ impl Worker {
             .insert(
                 "serialized_challenger".to_string(),
                 serialized_challenger.into(),
-            );
+            ); */
+
+        println!(
+            "CHECKPOINT+CHALLENGER SIZE: {}",
+            checkpoint.len() + serialized_challenger.len()
+        );
+        let req = PartialProofRequestData {
+            request: config,
+            checkpoint_id: i,
+            checkpoint_data: checkpoint,
+            serialized_challenger,
+        };
+
+        println!("Serializing...");
+        let data = bincode::serialize(&req).unwrap();
+
+        println!("DATA SIZE: {}", data.len());
 
         let now = std::time::Instant::now();
 
+        let part = reqwest::multipart::Part::bytes(data).file_name("checkpoint");
+        let form = reqwest::multipart::Form::new()
+            .text("resourceName", "checkpoint")
+            .part("FileData", part);
+
         let response_result = reqwest::Client::new()
             .post(&self.url)
-            .json(&config)
+            .multipart(form)
             .send()
             .await;
 
         match response_result {
             Ok(response) => {
-                let value: Value = response.json().await.unwrap();
+                println!("RESPONSE: {:#?}", response);
+                let txt = response.text().await.unwrap();
+                println!("BODY: {:#?}", txt);
+                // let value: Value = response.json().await.unwrap();
+                let value: Value = serde_json::from_str(&txt).unwrap();
                 let sp1_response: Sp1Response =
                     serde_json::from_str(&value["data"].to_string()).unwrap();
 

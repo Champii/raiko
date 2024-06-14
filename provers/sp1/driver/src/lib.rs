@@ -417,7 +417,7 @@ mod sp1_specifics {
         stdin: &SP1Stdin,
         config: BabyBearPoseidon2,
         opts: SP1CoreOpts,
-    ) -> Result<(Vec<Vec<ExecutionRecord>>, Vec<u8>), SP1CoreProverError> {
+    ) -> Result<(Vec<Vec<ExecutionRecord>>, Vec<u8>, SP1PublicValues), SP1CoreProverError> {
         let proving_start = Instant::now();
 
         // Execute the program.
@@ -433,7 +433,7 @@ mod sp1_specifics {
 
         // Execute the program, saving checkpoints at the start of every `shard_batch_size` cycle range.
         let mut checkpoints = Vec::new();
-        let (_public_values_stream, public_values) = loop {
+        let (public_values_stream, public_values) = loop {
             // Execute the runtime until we reach a checkpoint.
             let (checkpoint, done) = runtime
                 .execute_state()
@@ -500,7 +500,8 @@ mod sp1_specifics {
 
         println!("CHALLENGER SIZE: {}", serialized_challenger.len());
 
-        Ok((checkpoint_shards_vec, serialized_challenger))
+        let public_values = SP1PublicValues::from(&public_values_stream);
+        Ok((checkpoint_shards_vec, serialized_challenger, public_values))
     }
 
     pub fn prove_partial(

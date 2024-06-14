@@ -1,6 +1,12 @@
 use std::{fs::File, path::PathBuf};
 
-use axum::{debug_handler, extract::State, routing::post, Json, Router};
+use axum::{
+    body::{Body, Bytes},
+    debug_handler,
+    extract::{DefaultBodyLimit, Multipart, State},
+    routing::post,
+    Json, Router,
+};
 use raiko_core::{
     interfaces::{ProofRequest, RaikoError},
     provider::{rpc::RpcBlockDataProvider, BlockDataProvider},
@@ -9,7 +15,7 @@ use raiko_core::{
 use raiko_lib::{
     input::{get_input_path, GuestInput},
     utils::{to_header, HeaderHasher},
-    Measurement,
+    Measurement, PartialProofRequestData,
 };
 use serde_json::Value;
 use tracing::{debug, info};
@@ -91,6 +97,127 @@ async fn validate_cache_input(
             "Cached input is not enabled".to_owned(),
         ))
     }
+}
+
+async fn handle_partial_proof(
+    ProverState {
+        opts,
+        chain_specs: support_chain_specs,
+    }: ProverState,
+    mut multipart: Multipart,
+) -> HostResult<ProofResponse> {
+    let data = if let Some(mut field) = multipart.next_field().await.unwrap() {
+        field.bytes().await.unwrap()
+    } else {
+        return Err(HostError::InvalidRequestConfig("No data field".to_string()));
+    };
+
+    let partial_proof_request_data: PartialProofRequestData =
+        bincode::deserialize_from(data.as_ref()).map_err(|e| {
+            inc_host_error(0);
+            HostError::Anyhow(e.into())
+        })?;
+
+    // Override the existing proof request config from the config file and command line
+    // options with the request from the client.
+    let mut config = opts.proof_request_opt.clone();
+    config.merge(&partial_proof_request_data.request)?;
+
+    // Construct the actual proof request from the available configs.
+    let proof_request = ProofRequest::try_from(config)?;
+    inc_host_req_count(proof_request.block_number);
+    inc_guest_req_count(&proof_request.proof_type, proof_request.block_number);
+
+    info!(
+        "# Generating proof for block {} on {}",
+        proof_request.block_number, proof_request.network
+    );
+
+    // Check for a cached input for the given request config.
+    let cached_input = get_cached_input(
+        &opts.cache_path,
+        proof_request.block_number,
+        &proof_request.network.to_string(),
+    );
+
+    let l1_chain_spec = support_chain_specs
+        .get_chain_spec(&proof_request.l1_network.to_string())
+        .ok_or_else(|| HostError::InvalidRequestConfig("Unsupported l1 network".to_string()))?;
+
+    let taiko_chain_spec = support_chain_specs
+        .get_chain_spec(&proof_request.network.to_string())
+        .ok_or_else(|| HostError::InvalidRequestConfig("Unsupported raiko network".to_string()))?;
+
+    // Execute the proof generation.
+    let total_time = Measurement::start("", false);
+
+    let raiko = Raiko::new(
+        l1_chain_spec.clone(),
+        taiko_chain_spec.clone(),
+        proof_request.clone(),
+    );
+    let provider = RpcBlockDataProvider::new(
+        &taiko_chain_spec.rpc.clone(),
+        proof_request.block_number - 1,
+    )?;
+    let input = match validate_cache_input(cached_input, &provider).await {
+        Ok(cache_input) => cache_input,
+        Err(_) => {
+            // no valid cache
+            memory::reset_stats();
+            let measurement = Measurement::start("Generating input...", false);
+            let input = raiko.generate_input(provider).await?;
+            let input_time = measurement.stop_with("=> Input generated");
+            observe_prepare_input_time(proof_request.block_number, input_time, true);
+            memory::print_stats("Input generation peak memory used: ");
+            input
+        }
+    };
+    memory::reset_stats();
+    let output = raiko.get_output(&input)?;
+    memory::print_stats("Guest program peak memory used: ");
+
+    memory::reset_stats();
+    let measurement = Measurement::start("Generating proof...", false);
+    let proof = raiko
+        .prove_partial(input.clone(), partial_proof_request_data)
+        .await
+        .map_err(|e| {
+            let total_time = total_time.stop_with("====> Proof generation failed");
+            observe_total_time(proof_request.block_number, total_time, false);
+            match e {
+                RaikoError::Guest(e) => {
+                    inc_guest_error(&proof_request.proof_type, proof_request.block_number);
+                    HostError::Core(e.into())
+                }
+                e => {
+                    inc_host_error(proof_request.block_number);
+                    e.into()
+                }
+            }
+        })?;
+    let guest_time = measurement.stop_with("=> Proof generated");
+    observe_guest_time(
+        &proof_request.proof_type,
+        proof_request.block_number,
+        guest_time,
+        true,
+    );
+    memory::print_stats("Prover peak memory used: ");
+
+    inc_guest_success(&proof_request.proof_type, proof_request.block_number);
+    let total_time = total_time.stop_with("====> Complete proof generated");
+    observe_total_time(proof_request.block_number, total_time, true);
+
+    // Cache the input for future use.
+    set_cached_input(
+        &opts.cache_path,
+        proof_request.block_number,
+        &proof_request.network.to_string(),
+        &input,
+    )?;
+
+    ProofResponse::try_from(proof)
 }
 
 async fn handle_proof(
@@ -226,6 +353,19 @@ async fn proof_handler(
     })
 }
 
+async fn partial_proof_handler(
+    State(prover_state): State<ProverState>,
+    multipart: Multipart,
+) -> HostResult<ProofResponse> {
+    inc_current_req();
+    handle_partial_proof(prover_state, multipart)
+        .await
+        .map_err(|e| {
+            dec_current_req();
+            e
+        })
+}
+
 #[derive(OpenApi)]
 #[openapi(paths(proof_handler))]
 struct Docs;
@@ -235,7 +375,10 @@ pub fn create_docs() -> utoipa::openapi::OpenApi {
 }
 
 pub fn create_router() -> Router<ProverState> {
-    Router::new().route("/", post(proof_handler))
+    Router::new()
+        .route("/", post(proof_handler))
+        .route("/partial", post(partial_proof_handler))
+        .layer(DefaultBodyLimit::disable())
 }
 
 #[cfg(test)]

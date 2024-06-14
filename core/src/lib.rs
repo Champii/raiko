@@ -12,6 +12,7 @@ use raiko_lib::{
     protocol_instance::ProtocolInstance,
     prover::Proof,
     utils::HeaderHasher,
+    PartialProofRequestData,
 };
 use serde_json::Value;
 use std::{collections::BTreeMap, hint::black_box};
@@ -138,6 +139,21 @@ impl Raiko {
             .proof_type
             .run_prover(input, output, &data)
             .await
+    }
+
+    pub async fn prove_partial(
+        &self,
+        input: GuestInput,
+        data: PartialProofRequestData,
+    ) -> RaikoResult<Proof> {
+        let config = serde_json::to_value(&self.request)?;
+        /* self.request
+        .proof_type
+        .run_prover(input, output, &data)
+        .await */
+        sp1_driver::Sp1DistributedProver::run_as_worker(input, &config, &data)
+            .await
+            .map_err(|e| e.into())
     }
 }
 
