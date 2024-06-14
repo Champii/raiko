@@ -110,22 +110,24 @@ impl Worker {
 
         println!("Serializing...");
         let data = bincode::serialize(&req).unwrap();
-
         println!("DATA SIZE: {}", data.len());
 
         let now = std::time::Instant::now();
-
+        println!("Preparing the data");
         let part = reqwest::multipart::Part::bytes(data).file_name("checkpoint");
+        println!("Sending the form");
         let form = reqwest::multipart::Form::new()
             .text("resourceName", "checkpoint")
             .part("FileData", part);
 
+        println!("Sending the request");
         let response_result = reqwest::Client::new()
             .post(&self.url)
             .multipart(form)
             .send()
             .await;
 
+        println!("waiting for the response");
         match response_result {
             Ok(response) => {
                 println!("RESPONSE: {:#?}", response);
