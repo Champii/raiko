@@ -58,6 +58,12 @@ risc0-binfmt = { version = "0.21.0" }
 sp1-sdk = { path = "../sp1/sdk" }
 sp1-zkvm = { path = "../sp1/zkvm" }
 sp1-helper = { path = "../sp1/helper" }
+sp1-core = { path = "../sp1/core" }
+
+# Plonky3
+p3-field = { git = "https://github.com/Plonky3/Plonky3.git", rev = "3b5265f9d5af36534a46caebf0617595cfb42c5a" }
+p3-challenger = { git = "https://github.com/Plonky3/Plonky3.git", rev = "3b5265f9d5af36534a46caebf0617595cfb42c5a" }
+
 
 # alloy
 alloy-rlp = { version = "0.3.4", default-features = false }

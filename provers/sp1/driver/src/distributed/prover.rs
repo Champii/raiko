@@ -5,9 +5,13 @@ use raiko_lib::{
     input::{GuestInput, GuestOutput},
     prover::{to_proof, Proof, Prover, ProverConfig, ProverResult},
 };
-use sp1_sdk::{ProverClient, SP1Stdin};
+use sp1_core::{runtime::Program, utils::SP1CoreOpts};
+use sp1_sdk::{CoreSC, ProverClient, SP1Stdin};
 
-use crate::{Sp1Response, ELF};
+use crate::{
+    sp1_specifics::{nb_checkpoints, prove_partial},
+    Sp1Response, ELF,
+};
 
 pub struct Sp1DistributedProver;
 
@@ -49,9 +53,8 @@ impl Sp1DistributedProver {
         let (_pk, vk) = client.setup(ELF);
 
         // Execute the program to get the public values and the number of checkpoints
-        let (nb_checkpoint, opts, public_values) = client
-            .nb_checkpoints(ELF, stdin.clone(), ip_list.len())
-            .expect("Sp1: execution failed");
+        let (nb_checkpoint, opts, public_values) =
+            nb_checkpoints(ELF, &stdin, ip_list.len()).expect("Sp1: execution failed");
 
         let mut config = config.clone();
 
@@ -178,9 +181,13 @@ impl Sp1DistributedProver {
         let client = ProverClient::new();
         let (pk, _vk) = client.setup(ELF);
 
-        let partial_proof = client
-            .prove_partial(&pk, stdin.clone(), shard_batch_size, checkpoint)
-            .expect("Sp1: proving failed");
+        let config = CoreSC::default();
+        let program = Program::from(&pk.elf);
+        let mut opts = SP1CoreOpts::default();
+        opts.shard_batch_size = shard_batch_size;
+
+        let partial_proof =
+            prove_partial(program, &stdin, config, opts, checkpoint).expect("Sp1: proving failed");
 
         to_proof(Ok(Sp1Response {
             proof: serde_json::to_string(&partial_proof).unwrap(),
