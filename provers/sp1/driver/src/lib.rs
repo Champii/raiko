@@ -81,17 +81,28 @@ mod sp1_specifics {
             .parse::<usize>()
             .unwrap_or(opts.shard_size);
 
-        opts.shard_batch_size = std::env::var("SHARD_BATCH_SIZE")
-            .unwrap_or(opts.shard_batch_size.to_string())
-            .parse::<usize>()
-            .unwrap_or(opts.shard_batch_size);
+        // TODO: determine the best shard batch size based on the amount of available memory
+        opts.shard_batch_size = 10;
 
         let mut runtime = Runtime::new(program, opts);
         runtime.write_vecs(&stdin.buffer);
         for (proof, vkey) in stdin.proofs.iter() {
             runtime.write_proof(proof.clone(), vkey.clone());
         }
-        runtime.run()?;
+
+        let (_public_values_stream, public_values) = loop {
+            // Execute the runtime until we reach a checkpoint.
+            let (checkpoint, done) = runtime
+                .execute_state()
+                .map_err(SP1CoreProverError::ExecutionError)?;
+
+            if done {
+                break (
+                    std::mem::take(&mut runtime.state.public_values_stream),
+                    runtime.record.public_values,
+                );
+            }
+        };
 
         let nb_shards =
             (runtime.record.cpu_events.len() as f64 / opts.shard_size as f64).ceil() as usize;
