@@ -73,7 +73,6 @@ mod sp1_specifics {
         nb_workers: usize,
     ) -> Result<(usize, SP1CoreOpts, SP1PublicValues), ExecutionError> {
         // nb_checkpoints, sp1_core_opts, public_values
-        let program = Program::from(elf);
         let mut opts = SP1CoreOpts::default();
 
         opts.shard_size = std::env::var("SHARD_SIZE")
@@ -82,7 +81,9 @@ mod sp1_specifics {
             .unwrap_or(opts.shard_size);
 
         // TODO: determine the best shard batch size based on the amount of available memory
-        opts.shard_batch_size = 10;
+        opts.shard_batch_size = 5;
+
+        let program = Program::from(elf);
 
         let mut runtime = Runtime::new(program, opts);
         runtime.write_vecs(&stdin.buffer);
