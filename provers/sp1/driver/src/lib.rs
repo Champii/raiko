@@ -90,11 +90,12 @@ mod sp1_specifics {
             runtime.write_proof(proof.clone(), vkey.clone());
         }
 
-        let (_public_values_stream, public_values) = loop {
+        let (public_values_stream, public_values) = loop {
             // Execute the runtime until we reach a checkpoint.
             let (checkpoint, done) = runtime
                 .execute_state()
-                .map_err(SP1CoreProverError::ExecutionError)?;
+                .map_err(SP1CoreProverError::ExecutionError)
+                .unwrap();
 
             if done {
                 break (
@@ -118,7 +119,7 @@ mod sp1_specifics {
         Ok((
             nb_checkpoints,
             opts,
-            SP1PublicValues::from(&runtime.state.public_values_stream),
+            SP1PublicValues::from(&public_values_stream),
         ))
     }
 
