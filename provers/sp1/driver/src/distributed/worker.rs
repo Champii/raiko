@@ -106,11 +106,7 @@ impl Worker {
         println!("waiting for the response");
         match response_result {
             Ok(response) => {
-                println!("RESPONSE: {:#?}", response);
-                let txt = response.text().await.unwrap();
-                println!("BODY: {:#?}", txt);
-                // let value: Value = response.json().await.unwrap();
-                let value: Value = serde_json::from_str(&txt).unwrap();
+                let value: Value = response.json().await.unwrap();
                 let sp1_response: Sp1Response =
                     serde_json::from_str(&value["data"].to_string()).unwrap();
 
