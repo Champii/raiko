@@ -57,11 +57,13 @@ impl Sp1DistributedProver {
 
         let program = Program::from(&pk.elf);
 
-        // Execute the program to get the public values and the number of checkpoints
+        /* // Execute the program to get the public values and the number of checkpoints
         let (_nb_checkpoint, opts, _public_values) =
-            nb_checkpoints(ELF, &stdin, ip_list.len()).expect("Sp1: execution failed");
+            nb_checkpoints(ELF, &stdin, ip_list.len()).expect("Sp1: execution failed"); */
 
         let proving_config = CoreSC::default();
+        let mut opts = SP1CoreOpts::default();
+        opts.shard_batch_size = 1;
 
         let (checkpoints, serialized_challenger, public_values) =
             compute_trace_and_challenger(program, &stdin, proving_config, opts).unwrap();
