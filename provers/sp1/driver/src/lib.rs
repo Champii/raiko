@@ -91,21 +91,23 @@ mod sp1_specifics {
             runtime.write_proof(proof.clone(), vkey.clone());
         }
 
-        let (public_values_stream, public_values) = loop {
-            // Execute the runtime until we reach a checkpoint.
-            let (checkpoint, done) = runtime
-                .execute_state()
-                .map_err(SP1CoreProverError::ExecutionError)
-                .unwrap();
+        runtime.run()?;
 
-            if done {
-                break (
-                    std::mem::take(&mut runtime.state.public_values_stream),
-                    runtime.record.public_values,
-                );
-            }
-        };
+        /* let (public_values_stream, public_values) = loop {
+                   // Execute the runtime until we reach a checkpoint.
+                   let (checkpoint, done) = runtime
+                       .execute_state()
+                       .map_err(SP1CoreProverError::ExecutionError)
+                       .unwrap();
 
+                   if done {
+                       break (
+                           std::mem::take(&mut runtime.state.public_values_stream),
+                           runtime.record.public_values,
+                       );
+                   }
+               };
+        */
         let nb_shards =
             (runtime.record.cpu_events.len() as f64 / opts.shard_size as f64).ceil() as usize;
 
@@ -120,7 +122,7 @@ mod sp1_specifics {
         Ok((
             nb_checkpoints,
             opts,
-            SP1PublicValues::from(&public_values_stream),
+            SP1PublicValues::from(&runtime.state.public_values_stream),
         ))
     }
 
