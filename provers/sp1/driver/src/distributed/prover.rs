@@ -72,7 +72,7 @@ impl Sp1DistributedProver {
 
         // Fixing the network and proof type to be forwarded to the workers
         let mut_config = config.as_object_mut().unwrap();
-        mut_config.insert("network".to_string(), "taiko_mainnet".into());
+        mut_config.insert("network".to_string(), "taiko_a7".into());
         mut_config.insert("proof_type".to_string(), "sp1_distributed".into());
         mut_config.insert(
             "sp1".to_string(),
