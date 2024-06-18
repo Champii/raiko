@@ -52,6 +52,7 @@ mod sp1_specifics {
     use serde_remote::deserialize_duplex_challenger;
     use serde_remote::serialize_duplex_challenger;
     use sp1_core::runtime::ExecutionRecord;
+    use sp1_core::runtime::ExecutionState;
     use sp1_core::utils::baby_bear_poseidon2::Perm;
     use sp1_core::utils::baby_bear_poseidon2::Val;
     use sp1_core::utils::BabyBearPoseidon2;
@@ -417,7 +418,7 @@ mod sp1_specifics {
         stdin: &SP1Stdin,
         config: BabyBearPoseidon2,
         opts: SP1CoreOpts,
-    ) -> Result<(Vec<Vec<ExecutionRecord>>, Vec<u8>, SP1PublicValues), SP1CoreProverError> {
+    ) -> Result<(Vec<File>, Vec<u8>, SP1PublicValues), SP1CoreProverError> {
         let proving_start = Instant::now();
 
         // Execute the program.
@@ -471,6 +472,10 @@ mod sp1_specifics {
             DuplexChallenger::new(machine_config.perm.clone());
         // let mut challenger = machine.config().challenger();
         // vk.observe_into(&mut challenger);
+        log::info!(
+            "Public value size: {}",
+            bincode::serialize(&public_values).unwrap().len()
+        );
 
         let mut checkpoint_shards_vec = Vec::new();
 
@@ -478,6 +483,11 @@ mod sp1_specifics {
             let mut record = trace_checkpoint(program.clone(), checkpoint_file, opts);
             record.public_values = public_values;
             reset_seek(&mut *checkpoint_file);
+
+            log::info!(
+                "Record size: {}",
+                bincode::serialize(&record).unwrap().len()
+            );
 
             // Shard the record into shards.
             let checkpoint_shards =
@@ -501,7 +511,7 @@ mod sp1_specifics {
         println!("CHALLENGER SIZE: {}", serialized_challenger.len());
 
         let public_values = SP1PublicValues::from(&public_values_stream);
-        Ok((checkpoint_shards_vec, serialized_challenger, public_values))
+        Ok((checkpoints, serialized_challenger, public_values))
     }
 
     pub fn prove_partial(
@@ -509,7 +519,7 @@ mod sp1_specifics {
         stdin: &SP1Stdin,
         config: BabyBearPoseidon2,
         opts: SP1CoreOpts,
-        checkpoint: Vec<ExecutionRecord>,
+        checkpoint: ExecutionState,
         serialized_challenger: Vec<u8>,
         checkpoint_id: usize,
     ) -> Result<Vec<ShardProof<BabyBearPoseidon2>>, SP1CoreProverError>
@@ -628,6 +638,19 @@ mod sp1_specifics {
         }; */
 
         let mut challenger = deserialize_duplex_challenger(serialized_challenger);
+
+        let mut events = {
+            let mut runtime = Runtime::recover(program.clone(), checkpoint, opts);
+            let (events, _) = tracing::debug_span!("runtime.trace")
+                .in_scope(|| runtime.execute_record().unwrap());
+            events
+        };
+
+        // TODO
+        // events.public_values = public_values;
+
+        let sharding_config = ShardingConfig::default();
+        let checkpoint = machine.shard(events, &sharding_config);
 
         log::info!("Starting proof shard");
         let mut checkpoint_proofs = checkpoint

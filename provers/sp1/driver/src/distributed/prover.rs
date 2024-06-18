@@ -1,4 +1,4 @@
-use std::env;
+use std::{env, io::Read};
 
 use super::worker::Worker;
 use raiko_lib::{
@@ -65,7 +65,7 @@ impl Sp1DistributedProver {
         let mut opts = SP1CoreOpts::default();
         opts.shard_batch_size = 1;
 
-        let (checkpoints, serialized_challenger, public_values) =
+        let (mut checkpoints, serialized_challenger, public_values) =
             compute_trace_and_challenger(program, &stdin, proving_config, opts).unwrap();
 
         let mut config = config.clone();
@@ -104,9 +104,11 @@ impl Sp1DistributedProver {
 
         // Send the checkpoints to the workers
         // for i in 0..nb_checkpoint {
-        for (i, checkpoint) in checkpoints.iter().enumerate() {
+        for (i, checkpoint) in checkpoints.iter_mut().enumerate() {
             log::info!("Serializing checkpoint {}", i);
-            let serialized_checkpoint = bincode::serialize(checkpoint).unwrap();
+            // let serialized_checkpoint = bincode::serialize(checkpoint).unwrap();
+            let mut serialized_checkpoint = Vec::new();
+            checkpoint.read(&mut serialized_checkpoint).unwrap();
             log::info!("Sending checkpoint {}", i);
             queue_tx
                 .send((i, serialized_checkpoint, serialized_challenger.clone()))

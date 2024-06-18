@@ -120,6 +120,7 @@ async fn handle_partial_proof(
         }
     }
 
+    log::info!("Data size: {:?}", data.len());
     log::info!("Before deserialize");
     let partial_proof_request_data: PartialProofRequestData = bincode::deserialize(data.as_ref())
         .map_err(|e| {
