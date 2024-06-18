@@ -343,8 +343,9 @@ mod sp1_specifics {
         let sharding_config = ShardingConfig::default();
         let mut shard_main_datas = Vec::new();
         let machine_config = machine.config();
-        let mut challenger: DuplexChallenger<Val, Perm, 16, 8> =
-            DuplexChallenger::new(machine_config.perm.clone());
+        /* let mut challenger: DuplexChallenger<Val, Perm, 16, 8> =
+        DuplexChallenger::new(machine_config.perm.clone()); */
+        let mut challenger = machine.config().challenger();
         // let mut challenger = machine.config().challenger();
         // vk.observe_into(&mut challenger);
         log::info!(
