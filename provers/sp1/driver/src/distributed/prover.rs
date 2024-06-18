@@ -65,7 +65,7 @@ impl Sp1DistributedProver {
         let mut opts = SP1CoreOpts::default();
         opts.shard_batch_size = 1;
 
-        let (mut checkpoints, serialized_challenger, public_values) =
+        let (mut checkpoints, serialized_challenger, public_values_stream, public_values) =
             compute_trace_and_challenger(program, &stdin, proving_config, opts).unwrap();
 
         let mut config = config.clone();
@@ -151,7 +151,7 @@ impl Sp1DistributedProver {
         let proof = sp1_sdk::SP1ProofWithPublicValues {
             proof: proofs,
             stdin: stdin.clone(),
-            public_values,
+            public_values: public_values_stream,
         };
 
         // Verify proof.

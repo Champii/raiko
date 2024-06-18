@@ -51,6 +51,7 @@ mod sp1_specifics {
     use serde::{de::DeserializeOwned, Deserialize, Serialize};
     use serde_remote::deserialize_duplex_challenger;
     use serde_remote::serialize_duplex_challenger;
+    use sp1_core::air::PublicValues;
     use sp1_core::runtime::ExecutionRecord;
     use sp1_core::runtime::ExecutionState;
     use sp1_core::utils::baby_bear_poseidon2::Perm;
@@ -291,7 +292,8 @@ mod sp1_specifics {
         stdin: &SP1Stdin,
         config: BabyBearPoseidon2,
         opts: SP1CoreOpts,
-    ) -> Result<(Vec<File>, Vec<u8>, SP1PublicValues), SP1CoreProverError> {
+    ) -> Result<(Vec<File>, Vec<u8>, SP1PublicValues, PublicValues<u32, u32>), SP1CoreProverError>
+    {
         let proving_start = Instant::now();
 
         // Execute the program.
@@ -383,8 +385,13 @@ mod sp1_specifics {
 
         println!("CHALLENGER SIZE: {}", serialized_challenger.len());
 
-        let public_values = SP1PublicValues::from(&public_values_stream);
-        Ok((checkpoints, serialized_challenger, public_values))
+        let public_values_stream = SP1PublicValues::from(&public_values_stream);
+        Ok((
+            checkpoints,
+            serialized_challenger,
+            public_values_stream,
+            public_values,
+        ))
     }
 
     pub fn prove_partial(
