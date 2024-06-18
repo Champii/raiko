@@ -13,11 +13,13 @@ pub struct Worker {
     /// The config to send to the worker
     config: ProverConfig,
     /// A queue to receive the checkpoint to compute the partial proof
-    queue: Receiver<(usize, Vec<u8>, Vec<u8>)>,
+    queue: Receiver<(usize, Vec<u8>)>,
     /// A channel to send back the id of the checkpoint along with the json strings encoding the computed partial proofs
     answer: Sender<(usize, String)>,
     /// if an error occured, send the checkpoint back in the queue for another worker to pick it up
-    queue_push_back: Sender<(usize, Vec<u8>, Vec<u8>)>,
+    queue_push_back: Sender<(usize, Vec<u8>)>,
+    public_values: Vec<u8>,
+    serialized_challenger: Vec<u8>,
 }
 
 impl Worker {
@@ -25,9 +27,11 @@ impl Worker {
         id: usize,
         url: String,
         config: ProverConfig,
-        queue: Receiver<(usize, Vec<u8>, Vec<u8>)>,
+        queue: Receiver<(usize, Vec<u8>)>,
         answer: Sender<(usize, String)>,
-        queue_push_back: Sender<(usize, Vec<u8>, Vec<u8>)>,
+        queue_push_back: Sender<(usize, Vec<u8>)>,
+        public_values: Vec<u8>,
+        serialized_challenger: Vec<u8>,
     ) -> Self {
         Worker {
             id,
@@ -36,13 +40,15 @@ impl Worker {
             queue,
             answer,
             queue_push_back,
+            public_values,
+            serialized_challenger,
         }
     }
 
     pub async fn run(&self) {
-        while let Ok((i, checkpoint, serialized_challenger)) = self.queue.recv().await {
+        while let Ok((i, checkpoint)) = self.queue.recv().await {
             // Compute the partial proof
-            let partial_proof_result = self.send_work(i, checkpoint, serialized_challenger).await;
+            let partial_proof_result = self.send_work(i, checkpoint).await;
 
             match partial_proof_result {
                 Ok(partial_proof) => self.answer.send((i, partial_proof)).await.unwrap(),
@@ -58,12 +64,7 @@ impl Worker {
         }
     }
 
-    async fn send_work(
-        &self,
-        i: usize,
-        checkpoint: Vec<u8>,
-        serialized_challenger: Vec<u8>,
-    ) -> Result<String, reqwest::Error> {
+    async fn send_work(&self, i: usize, checkpoint: Vec<u8>) -> Result<String, reqwest::Error> {
         log::info!(
             "Sending checkpoint to worker {}: {}",
             // checkpoint,
@@ -75,13 +76,14 @@ impl Worker {
 
         log::info!(
             "CHECKPOINT+CHALLENGER SIZE: {}",
-            checkpoint.len() + serialized_challenger.len()
+            checkpoint.len() + self.serialized_challenger.len()
         );
         let req = PartialProofRequestData {
             request: config.to_string(),
             checkpoint_id: i,
             checkpoint_data: checkpoint,
-            serialized_challenger,
+            serialized_challenger: self.serialized_challenger.clone(),
+            public_values: self.public_values.clone(),
         };
 
         log::info!("Serializing...");

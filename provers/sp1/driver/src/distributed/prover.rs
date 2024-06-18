@@ -86,6 +86,8 @@ impl Sp1DistributedProver {
         let (queue_tx, queue_rx) = async_channel::unbounded();
         let (answer_tx, answer_rx) = async_channel::unbounded();
 
+        let public_values_serialized = bincode::serialize(&public_values).unwrap();
+
         // Spawn the workers
         for (i, url) in ip_list.iter().enumerate() {
             let worker = Worker::new(
@@ -95,6 +97,8 @@ impl Sp1DistributedProver {
                 queue_rx.clone(),
                 answer_tx.clone(),
                 queue_tx.clone(),
+                serialized_challenger.clone(),
+                public_values_serialized.clone(),
             );
 
             tokio::spawn(async move {
@@ -110,10 +114,7 @@ impl Sp1DistributedProver {
             let mut serialized_checkpoint = Vec::new();
             checkpoint.read(&mut serialized_checkpoint).unwrap();
             log::info!("Sending checkpoint {}", i);
-            queue_tx
-                .send((i, serialized_checkpoint, serialized_challenger.clone()))
-                .await
-                .unwrap();
+            queue_tx.send((i, serialized_checkpoint)).await.unwrap();
         }
 
         let mut proofs = Vec::new();
