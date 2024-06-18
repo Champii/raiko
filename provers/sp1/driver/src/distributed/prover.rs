@@ -129,7 +129,7 @@ impl Sp1DistributedProver {
             proof: proofs,
             stdin: stdin.clone(),
             public_values,
-            sp1_version: sp1_core::SP1_CIRCUIT_VERSION.to_string(),
+            // sp1_version: sp1_core::SP1_CIRCUIT_VERSION.to_string(),
         };
 
         // Verify proof.
