@@ -106,27 +106,29 @@ async fn handle_partial_proof(
     }: ProverState,
     mut multipart: Multipart,
 ) -> HostResult<ProofResponse> {
-    println!("Handling partial proof");
+    log::info!("Handling partial proof");
     let mut data = Bytes::new();
     while let Some(mut field) = multipart.next_field().await.unwrap() {
-        println!("Field name: {:?}", field.name());
-        println!("Field content type: {:?}", field.content_type());
+        log::info!("Field name: {:?}", field.name());
+        log::info!("Field content type: {:?}", field.content_type());
         if let Some("FileData") = field.name() {
+            log::info!("Before bytes");
             data = field.bytes().await.unwrap();
+            log::info!("After bytes");
 
             break;
         }
     }
 
-    println!("Before deserialize");
+    log::info!("Before deserialize");
     let partial_proof_request_data: PartialProofRequestData = bincode::deserialize(data.as_ref())
         .map_err(|e| {
-        println!("Error deserializing: {:#?}", e);
+        log::info!("Error deserializing: {:#?}", e);
         inc_host_error(0);
         HostError::Anyhow(e.into())
     })?;
 
-    println!("After deserialize");
+    log::info!("After deserialize");
 
     // Override the existing proof request config from the config file and command line
     // options with the request from the client.

@@ -73,7 +73,7 @@ impl Worker {
 
         let mut config = self.config.clone();
 
-        println!(
+        log::info!(
             "CHECKPOINT+CHALLENGER SIZE: {}",
             checkpoint.len() + serialized_challenger.len()
         );
@@ -84,26 +84,26 @@ impl Worker {
             serialized_challenger,
         };
 
-        println!("Serializing...");
+        log::info!("Serializing...");
         let data = bincode::serialize(&req).unwrap();
-        println!("DATA SIZE: {}", data.len());
+        log::info!("DATA SIZE: {}", data.len());
 
         let now = std::time::Instant::now();
-        println!("Preparing the data");
+        log::info!("Preparing the data");
         let part = reqwest::multipart::Part::bytes(data).file_name("checkpoint");
-        println!("Sending the form");
+        log::info!("Sending the form");
         let form = reqwest::multipart::Form::new()
             .text("resourceName", "checkpoint")
             .part("FileData", part);
 
-        println!("Sending the request");
+        log::info!("Sending the request");
         let response_result = reqwest::Client::new()
             .post(&self.url)
             .multipart(form)
             .send()
             .await;
 
-        println!("waiting for the response");
+        log::info!("waiting for the response");
         match response_result {
             Ok(response) => {
                 let value: Value = response.json().await.unwrap();

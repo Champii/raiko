@@ -5317,6 +5317,7 @@ dependencies = [
  "flate2",
  "hyper 0.14.29",
  "lazy_static",
+ "log",
  "lru_time_cache",
  "once_cell",
  "prometheus",
