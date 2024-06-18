@@ -97,8 +97,8 @@ impl Sp1DistributedProver {
                 queue_rx.clone(),
                 answer_tx.clone(),
                 queue_tx.clone(),
-                serialized_challenger.clone(),
                 public_values_serialized.clone(),
+                serialized_challenger.clone(),
             );
 
             tokio::spawn(async move {
@@ -112,7 +112,8 @@ impl Sp1DistributedProver {
             log::info!("Serializing checkpoint {}", i);
             // let serialized_checkpoint = bincode::serialize(checkpoint).unwrap();
             let mut serialized_checkpoint = Vec::new();
-            checkpoint.read(&mut serialized_checkpoint).unwrap();
+            checkpoint.read_to_end(&mut serialized_checkpoint).unwrap();
+            log::info!("Serialized checkpoint len {}", serialized_checkpoint.len());
             log::info!("Sending checkpoint {}", i);
             queue_tx.send((i, serialized_checkpoint)).await.unwrap();
         }
@@ -221,7 +222,7 @@ impl Sp1DistributedProver {
         let config = CoreSC::default();
         let program = Program::from(&pk.elf);
         let mut opts = SP1CoreOpts::default();
-        // opts.shard_batch_size = shard_batch_size;
+        opts.shard_batch_size = 1;
 
         let checkpoint_data = bincode::deserialize(&data.checkpoint_data).unwrap();
 
