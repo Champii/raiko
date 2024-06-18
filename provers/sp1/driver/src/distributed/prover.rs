@@ -233,6 +233,7 @@ impl Sp1DistributedProver {
             checkpoint_data,
             data.serialized_challenger.clone(),
             data.checkpoint_id,
+            bincode::deserialize(&data.public_values).unwrap(),
         )
         .expect("Sp1: proving failed");
 

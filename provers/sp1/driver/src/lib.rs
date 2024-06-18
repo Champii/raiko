@@ -286,133 +286,6 @@ mod sp1_specifics {
         ))
     }
 
-    //impl serialize for [F; WIDTH]
-    /* impl<F, P, const WIDTH: usize, const RATE: usize> Serialize
-        for DuplexChallengerCopy<F, P, WIDTH, RATE>
-    where
-        F: Clone,
-        P: CryptographicPermutation<[F; WIDTH]>,
-    {
-        fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-        where
-            S: serde::Serializer,
-        {
-            let serie = serializer.serialize_struct("DuplexChallengerCopy", 4)?;
-            serie.serialize_field("sponge_state", &self.sponge_state)?;
-            serie.serialize_field("input_buffer", &self.input_buffer)?;
-            serie.serialize_field("output_buffer", &self.output_buffer)?;
-            serie.serialize_field("permutation", &self.permutation)?;
-            serie.end()
-            /* DuplexChallengerCopy::<F, P, WIDTH, RATE> {
-                sponge_state: self.sponge_state.clone(),
-                input_buffer: self.input_buffer.clone(),
-                output_buffer: self.output_buffer.clone(),
-                permutation: self.permutation.clone(),
-            }
-            .serialize(serializer) */
-        }
-    }
-
-    //impl deserialize for [F; WIDTH]
-    impl<'de, F, P, const WIDTH: usize, const RATE: usize> Deserialize<'de>
-        for DuplexChallengerCopy<F, P, WIDTH, RATE>
-    where
-        F: Clone,
-        P: CryptographicPermutation<[F; WIDTH]>,
-    {
-        fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-        where
-            D: serde::Deserializer<'de>,
-        {
-            let duplex_challenger_copy =
-                DuplexChallengerCopy::<F, P, WIDTH, RATE>::deserialize(deserializer)?;
-            Ok(duplex_challenger_copy)
-        }
-    } */
-
-    /* fn serialize_duplex_challenger(
-           duplex_challenger: &DuplexChallenger<Val, Perm, 16, 8>,
-       ) -> Vec<u8> {
-           let duplex_challenger_copy = DuplexChallengerRemote::<Val, Perm, 16, 8> {
-               sponge_state: duplex_challenger.sponge_state.clone(),
-               input_buffer: duplex_challenger.input_buffer.clone(),
-               output_buffer: duplex_challenger.output_buffer.clone(),
-               permutation: duplex_challenger.permutation.clone(),
-           };
-           bincode::serialize(&duplex_challenger_copy).unwrap()
-       }
-
-       fn deserialize_duplex_challenger(serialized: Vec<u8>) -> DuplexChallenger<Val, Perm, 16, 8> {
-           let duplex_challenger_copy: DuplexChallengerRemote<Val, Perm, 16, 8> =
-               bincode::deserialize(&serialized).unwrap();
-           DuplexChallenger::<Val, Perm, 16, 8> {
-               sponge_state: duplex_challenger_copy.sponge_state,
-               input_buffer: duplex_challenger_copy.input_buffer,
-               output_buffer: duplex_challenger_copy.output_buffer,
-               permutation: duplex_challenger_copy.permutation,
-           }
-       }
-    */
-    /* pub type Val = BabyBear;
-    pub type Perm = Poseidon2<Val, Poseidon2ExternalMatrixGeneral, DiffusionMatrixBabyBear, 16, 7>;
-    #[derive(Clone, Debug)]
-    pub struct DuplexChallenger<F, P, const WIDTH: usize, const RATE: usize>
-    where
-        F: Clone,
-        P: CryptographicPermutation<[F; WIDTH]>,
-    {
-        pub sponge_state: [F; WIDTH],
-        pub input_buffer: Vec<F>,
-        pub output_buffer: Vec<F>,
-        pub permutation: P,
-    }
-
-    impl<F, P, const WIDTH: usize, const RATE: usize> DuplexChallenger<F, P, WIDTH, RATE>
-    where
-        F: Copy,
-        P: CryptographicPermutation<[F; WIDTH]>,
-    {
-        pub fn new(permutation: P) -> Self
-        where
-            F: Default,
-        {
-            Self {
-                sponge_state: [F::default(); WIDTH],
-                input_buffer: vec![],
-                output_buffer: vec![],
-                permutation,
-            }
-        }
-
-        fn duplexing(&mut self) {
-            assert!(self.input_buffer.len() <= RATE);
-
-            // Overwrite the first r elements with the inputs.
-            for (i, val) in self.input_buffer.drain(..).enumerate() {
-                self.sponge_state[i] = val;
-            }
-
-            // Apply the permutation.
-            self.permutation.permute_mut(&mut self.sponge_state);
-
-            self.output_buffer.clear();
-            self.output_buffer.extend(self.sponge_state);
-        }
-    }
-
-    impl<F, P, const N: usize, const WIDTH: usize, const RATE: usize> CanObserve<Hash<F, F, N>>
-        for DuplexChallenger<F, P, WIDTH, RATE>
-    where
-        F: Copy,
-        P: CryptographicPermutation<[F; WIDTH]>,
-    {
-        fn observe(&mut self, values: Hash<F, F, N>) {
-            for value in values {
-                self.observe(value);
-            }
-        }
-    } */
-
     pub fn compute_trace_and_challenger(
         program: Program,
         stdin: &SP1Stdin,
@@ -522,6 +395,7 @@ mod sp1_specifics {
         checkpoint: ExecutionState,
         serialized_challenger: Vec<u8>,
         checkpoint_id: usize,
+        public_values: sp1_core::air::PublicValues<u32, u32>,
     ) -> Result<Vec<ShardProof<BabyBearPoseidon2>>, SP1CoreProverError>
 /* where
         SC::Challenger: Clone,
@@ -647,7 +521,7 @@ mod sp1_specifics {
         };
 
         // TODO
-        // events.public_values = public_values;
+        events.public_values = public_values;
 
         let sharding_config = ShardingConfig::default();
         let checkpoint = machine.shard(events, &sharding_config);
