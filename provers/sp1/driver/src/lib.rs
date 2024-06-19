@@ -161,6 +161,7 @@ mod sp1_specifics {
         ) -> Vec<u8> {
             // println!("CHALLENGER {:#?}", duplex_challenger);
             let orig = unsafe { any_as_u8_slice(duplex_challenger) };
+
             /* let transmuted = duplexchallenge_to_duplexchallengremote(duplex_challenger.clone());
             let new = unsafe { any_as_u8_slice(&transmuted) };
             println!("ORIG: {:#?}", orig);
@@ -171,9 +172,14 @@ mod sp1_specifics {
 
         unsafe fn any_as_u8_slice<T: Sized>(p: &T) -> &[u8] {
             ::core::slice::from_raw_parts((p as *const T) as *const u8, ::core::mem::size_of::<T>())
+            // &*(p as *const T as *const &[u8])
         }
-        unsafe fn u8_slice_as_any<T: Sized>(slice: &[u8]) -> T {
-            unsafe { std::ptr::read(slice.as_ptr() as *const _) }
+        unsafe fn u8_slice_as_any<T: Sized + Clone>(slice: &[u8]) -> T {
+            let (head, body, tail) = slice.align_to::<T>();
+            body[0].clone()
+            // unsafe { std::ptr::read(body.as_ptr() as *const T) }
+            // unsafe { std::mem::transmute(slice) }
+            // (*(slice.as_ptr() as *const T))
         }
 
         pub fn deserialize_duplex_challenger(
@@ -261,6 +267,12 @@ mod sp1_specifics {
 
         // Setup the machine.
         let machine = RiscvAir::machine(config);
+
+        let machine_config = machine.config();
+        let mut challenger = machine_config.challenger();
+
+        let serialized = serialize_duplex_challenger(&challenger);
+        let deserialized = deserialize_duplex_challenger(serialized);
         let (pk, vk) = machine.setup(runtime.program.as_ref());
 
         // Execute the program, saving checkpoints at the start of every `shard_batch_size` cycle range.
@@ -300,6 +312,8 @@ mod sp1_specifics {
         let mut shard_main_datas = Vec::new();
         let machine_config = machine.config();
         let mut challenger = machine_config.challenger();
+
+        let serialized = serialize_duplex_challenger(&challenger);
 
         log::info!(
             "Public value size: {}",
