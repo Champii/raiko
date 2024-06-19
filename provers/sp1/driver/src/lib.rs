@@ -421,7 +421,7 @@ mod sp1_specifics {
             checkpoint_shards_vec.push(checkpoint_shards);
         }
 
-        let serialized_challenger = serialize_duplex_challenger(&challenger);
+        let serialized_challenger = unsafe { cast_to_u8(&challenger) }.to_vec();
 
         println!("CHALLENGER SIZE: {}", serialized_challenger.len());
 
