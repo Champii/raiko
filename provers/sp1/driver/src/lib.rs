@@ -248,12 +248,13 @@ mod sp1_specifics {
         }
 
         pub unsafe fn cast_from_u8<T: Clone>(bytes: &[u8]) -> T {
-            // assert correct endianness somehow
+            /* // assert correct endianness somehow
             assert_eq!(bytes.len(), std::mem::size_of::<T>());
             let ptr: *const u8 = bytes.as_ptr();
-            assert_eq!(ptr.align_offset(std::mem::align_of::<T>()), 0);
+            assert_eq!(ptr.align_offset(std::mem::align_of::<T>()), 0); */
 
-            ptr.cast::<T>().as_ref().unwrap().clone()
+            // ptr.cast::<T>().as_ref().unwrap().clone()
+            std::ptr::read_unaligned(bytes.as_ptr().cast())
         }
     }
 
