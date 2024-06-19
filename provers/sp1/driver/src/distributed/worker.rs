@@ -78,6 +78,7 @@ impl Worker {
             "CHECKPOINT+CHALLENGER SIZE: {}",
             checkpoint.len() + self.serialized_challenger.len()
         );
+
         let req = PartialProofRequestData {
             request: config.to_string(),
             checkpoint_id: i,
