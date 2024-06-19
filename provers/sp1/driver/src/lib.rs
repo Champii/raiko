@@ -48,6 +48,9 @@ mod sp1_specifics {
     use serde::ser::SerializeTuple;
     use serde::Serializer;
     use serde::{de::DeserializeOwned, Deserialize, Serialize};
+    use serde_remote::as_u8_eq;
+    use serde_remote::cast_from_u8;
+    use serde_remote::cast_to_u8;
     use serde_remote::deserialize_duplex_challenger;
     use serde_remote::serialize_duplex_challenger;
     use sp1_core::air::PublicValues;
@@ -69,6 +72,8 @@ mod sp1_specifics {
     use crate::ELF;
 
     mod serde_remote {
+        use std::io::Read;
+
         use super::{Perm, Val};
         use p3_baby_bear::{BabyBear, DiffusionMatrixBabyBear};
         use p3_challenger::DuplexChallenger;
@@ -156,38 +161,99 @@ mod sp1_specifics {
             unsafe { std::mem::transmute(duplex_challenger_remote) }
         }
 
+        /* unsafe fn any_as_u8_slice<T: Sized>(p: &T) -> &[u8] {
+            println!("SIZEOF: {}", ::core::mem::size_of::<T>());
+
+            let slice = ::core::slice::from_raw_parts(
+                (p as *const T) as *const u8,
+                ::core::mem::size_of::<T>(),
+            );
+            /* assert_eq!(slice.len(), ::core::mem::size_of::<T>());
+
+            let slice2 = (*(p as *const T as *const &[u8])).to_vec();
+            assert_eq!(slice, slice2.as_slice()); */
+            slice
+        }
+
+
+
+        unsafe fn u8_slice_as_any<T: Sized + Clone>(slice: &[u8]) -> T {
+            /* assert_eq!(slice.len(), ::core::mem::size_of::<T>());
+            unsafe { &*(slice.as_ptr() as *const T) }.clone() */
+            /* let (head, body, tail) = slice.align_to::<T>();
+            body[0].clone() */
+            // unsafe { std::ptr::read(slice.as_ptr() as *const T) }
+            unsafe { std::mem::transmute(slice) }
+            // unsafe { std::mem::transmute(slice) }
+            // (*(slice.as_ptr() as *const T)).clone()
+            /* let num_bytes = ::std::mem::size_of::<T>();
+            let mut s = ::std::mem::uninitialized();
+            let buffer = std::slice::from_raw_parts_mut(&mut s as *mut T as *mut u8, num_bytes);
+            let mut data = slice.to_vec();
+            let mut slice = data.as_slice();
+            match slice.read_exact(buffer) {
+                Ok(()) => s,
+                Err(e) => {
+                    ::std::mem::forget(s);
+                    panic!("Failed to read_exact: {}", e);
+                }
+            } */
+        } */
+
+        pub unsafe fn as_u8_eq<T: Sized>(a: &T, b: &T) -> bool {
+            let a_slice = ::core::slice::from_raw_parts(
+                (a as *const T) as *const u8,
+                ::core::mem::size_of::<T>(),
+            );
+            let b_slice = ::core::slice::from_raw_parts(
+                (b as *const T) as *const u8,
+                ::core::mem::size_of::<T>(),
+            );
+            assert_eq!(a_slice.len(), b_slice.len());
+            a_slice == b_slice
+        }
+
         pub fn serialize_duplex_challenger(
             duplex_challenger: &DuplexChallenger<Val, Perm, 16, 8>,
         ) -> Vec<u8> {
             // println!("CHALLENGER {:#?}", duplex_challenger);
-            let orig = unsafe { any_as_u8_slice(duplex_challenger) };
+            /* let orig = unsafe { any_as_u8_slice(duplex_challenger) };
+            let new = unsafe { u8_slice_as_any::<DuplexChallenger<Val, Perm, 16, 8>>(orig) }; */
+            /* println!("EQUAL: \n{:?}\n{:?}", orig, unsafe {
+                any_as_u8_slice(&new)
+            }); */
+            // assert_eq!(orig, unsafe { any_as_u8_slice(&new) });
 
-            /* let transmuted = duplexchallenge_to_duplexchallengremote(duplex_challenger.clone());
-            let new = unsafe { any_as_u8_slice(&transmuted) };
-            println!("ORIG: {:#?}", orig);
-            println!("NEW: {:#?}", new);
-            bincode::serialize(&transmuted).unwrap() */
-            orig.to_vec()
-        }
-
-        unsafe fn any_as_u8_slice<T: Sized>(p: &T) -> &[u8] {
-            ::core::slice::from_raw_parts((p as *const T) as *const u8, ::core::mem::size_of::<T>())
-            // &*(p as *const T as *const &[u8])
-        }
-        unsafe fn u8_slice_as_any<T: Sized + Clone>(slice: &[u8]) -> T {
-            let (head, body, tail) = slice.align_to::<T>();
-            body[0].clone()
-            // unsafe { std::ptr::read(body.as_ptr() as *const T) }
-            // unsafe { std::mem::transmute(slice) }
-            // (*(slice.as_ptr() as *const T))
+            let transmuted = duplexchallenge_to_duplexchallengerremote(duplex_challenger.clone());
+            // let new = unsafe { any_as_u8_slice(&transmuted) };
+            /* println!("ORIG: {:#?}", orig);
+            println!("NEW: {:#?}", new); */
+            bincode::serialize(&transmuted).unwrap()
+            // orig.to_vec()
         }
 
         pub fn deserialize_duplex_challenger(
             serialized: Vec<u8>,
         ) -> DuplexChallenger<Val, Perm, 16, 8> {
-            /* let transmuted: DuplexChallengerRemote = bincode::deserialize(&serialized).unwrap();
-            duplexchallengerremote_to_duplexchallenger(transmuted) */
-            unsafe { u8_slice_as_any(&serialized) }
+            let transmuted: DuplexChallengerRemote = bincode::deserialize(&serialized).unwrap();
+            duplexchallengerremote_to_duplexchallenger(transmuted)
+            // unsafe { u8_slice_as_any(&serialized) }
+        }
+
+        pub unsafe fn cast_to_u8<T: Clone>(t: &T) -> &[u8] {
+            let ptr: *const T = t;
+            let ptr: *const u8 = ptr as *const u8;
+            let len = std::mem::size_of::<T>();
+            std::slice::from_raw_parts(ptr, len)
+        }
+
+        pub unsafe fn cast_from_u8<T: Clone>(bytes: &[u8]) -> T {
+            // assert correct endianness somehow
+            assert_eq!(bytes.len(), std::mem::size_of::<T>());
+            let ptr: *const u8 = bytes.as_ptr();
+            assert_eq!(ptr.align_offset(std::mem::align_of::<T>()), 0);
+
+            ptr.cast::<T>().as_ref().unwrap().clone()
         }
     }
 
@@ -271,8 +337,14 @@ mod sp1_specifics {
         let machine_config = machine.config();
         let mut challenger = machine_config.challenger();
 
-        let serialized = serialize_duplex_challenger(&challenger);
-        let deserialized = deserialize_duplex_challenger(serialized);
+        /* let serialized = serialize_duplex_challenger(&challenger);
+        let deserialized = deserialize_duplex_challenger(serialized); */
+
+        let serialized = unsafe { cast_to_u8(&challenger) };
+        let deserialized = unsafe { cast_from_u8(serialized) };
+
+        unsafe { as_u8_eq(&challenger, &deserialized) };
+
         let (pk, vk) = machine.setup(runtime.program.as_ref());
 
         // Execute the program, saving checkpoints at the start of every `shard_batch_size` cycle range.
@@ -313,7 +385,7 @@ mod sp1_specifics {
         let machine_config = machine.config();
         let mut challenger = machine_config.challenger();
 
-        let serialized = serialize_duplex_challenger(&challenger);
+        let serialized = unsafe { cast_to_u8(&challenger) };
 
         log::info!(
             "Public value size: {}",
@@ -381,7 +453,8 @@ mod sp1_specifics {
         // For each checkpoint, generate events and shard again, then prove the shards.
         let mut shard_proofs = Vec::<ShardProof<BabyBearPoseidon2>>::new();
 
-        let mut challenger = deserialize_duplex_challenger(serialized_challenger);
+        let mut challenger: DuplexChallenger<Val, Perm, 16, 8> =
+            unsafe { cast_from_u8(&serialized_challenger) };
 
         let mut events = {
             let mut runtime = Runtime::recover(program.clone(), checkpoint, opts);
