@@ -147,7 +147,7 @@ mod sp1_specifics {
                 8,
             >,
         ) -> DuplexChallengerRemote {
-            unsafe { std::mem::transmute(duplex_challenger) }
+            unsafe { std::mem::transmute_copy(&duplex_challenger) }
         }
 
         fn duplexchallengerremote_to_duplexchallenger(
@@ -158,7 +158,7 @@ mod sp1_specifics {
             16,
             8,
         > {
-            unsafe { std::mem::transmute(duplex_challenger_remote) }
+            unsafe { std::mem::transmute_copy(&duplex_challenger_remote) }
         }
 
         /* unsafe fn any_as_u8_slice<T: Sized>(p: &T) -> &[u8] {
@@ -422,7 +422,7 @@ mod sp1_specifics {
             checkpoint_shards_vec.push(checkpoint_shards);
         }
 
-        let serialized_challenger = unsafe { cast_to_u8(&challenger) }.to_vec();
+        let serialized_challenger = serialize_duplex_challenger(&challenger);
 
         println!("CHALLENGER SIZE: {}", serialized_challenger.len());
 
@@ -455,7 +455,7 @@ mod sp1_specifics {
         let mut shard_proofs = Vec::<ShardProof<BabyBearPoseidon2>>::new();
 
         let mut challenger: DuplexChallenger<Val, Perm, 16, 8> =
-            unsafe { cast_from_u8(&serialized_challenger) };
+            deserialize_duplex_challenger(serialized_challenger);
 
         let mut events = {
             let mut runtime = Runtime::recover(program.clone(), checkpoint, opts);
