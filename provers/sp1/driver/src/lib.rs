@@ -320,7 +320,7 @@ mod sp1_specifics {
         ))
     } */
 
-    pub fn compute_trace_and_challenger(
+    /* pub fn compute_trace_and_challenger(
         program: Program,
         stdin: &SP1Stdin,
         config: BabyBearPoseidon2,
@@ -568,31 +568,22 @@ mod sp1_specifics {
         );
 
         Ok(shard_proofs)
-    }
+    } */
 
     pub fn prove_partial_old(
         program: Program,
         stdin: &SP1Stdin,
         config: BabyBearPoseidon2,
         opts: SP1CoreOpts,
-        // checkpoint_id: usize,
     ) -> Result<
         (
             Vec<ExecutionState>,
-            Vec<u8>,
-            Vec<u8>,
+            DuplexChallenger<Val, Perm, 16, 8>,
             SP1PublicValues,
             PublicValues<u32, u32>,
         ),
         SP1CoreProverError,
-    >
-/* where
-        SC::Challenger: Clone,
-        OpeningProof<SC>: Send + Sync,
-        Com<SC>: Send + Sync,
-        PcsProverData<SC>: Send + Sync,
-        ShardMainData<SC>: Serialize + DeserializeOwned,
-        <SC as StarkGenericConfig>::Val: PrimeField32, */ {
+    > {
         let proving_start = Instant::now();
 
         // Execute the program.
@@ -605,24 +596,6 @@ mod sp1_specifics {
         // Setup the machine.
         let machine = RiscvAir::machine(config.clone());
         let (pk, vk) = machine.setup(runtime.program.as_ref());
-
-        // If we don't need to batch, we can just run the program normally and prove it.
-        /* if opts.shard_batch_size == 0 {
-            // Execute the runtime and collect all the events..
-            runtime.run().map_err(SP1CoreProverError::ExecutionError)?;
-
-            // If debugging is enabled, we will also debug the constraints.
-            #[cfg(feature = "debug")]
-            {
-                let mut challenger = machine.config().challenger();
-                machine.debug_constraints(&pk, runtime.record.clone(), &mut challenger);
-            }
-
-            // Generate the proof and return the proof and public values.
-            let public_values = std::mem::take(&mut runtime.state.public_values_stream);
-            let proof = prove_simple(machine.config().clone(), runtime)?;
-            return Ok(proof);
-        } */
 
         // Execute the program, saving checkpoints at the start of every `shard_batch_size` cycle range.
         let mut checkpoints = Vec::new();
@@ -676,95 +649,17 @@ mod sp1_specifics {
             // Commit to each shard.
             let (commitments, commit_data) = tracing::info_span!("commit")
                 .in_scope(|| LocalProver::commit_shards(&machine, &checkpoint_shards, opts));
-            // shard_main_datas.push(commit_data);
 
             // Observe the commitments.
             for (commitment, shard) in commitments.into_iter().zip(checkpoint_shards.iter()) {
                 challenger.observe(commitment);
                 challenger.observe_slice(&shard.public_values::<Val>()[0..machine.num_pv_elts()]);
             }
-            // checkpoint_shards_vec.push(checkpoint_shards);
         }
-
-        // For each checkpoint, generate events and shard again, then prove the shards.
-        // let mut shard_proofs = Vec::<ShardProof<BabyBearPoseidon2>>::new();
-        // let mut checkpoint_file = checkpoints.into_iter().nth(checkpoint_id).unwrap();
-
-        /* let checkpoint_shards = {
-            let mut events = trace_checkpoint(program.clone(), &checkpoint_file, opts);
-            events.public_values = public_values;
-            reset_seek(&mut checkpoint_file);
-            tracing::debug_span!("shard").in_scope(|| machine.shard(events, &sharding_config))
-        }; */
-
-        /* log::info!("Starting proof shard");
-        let mut checkpoint_proofs = checkpoint_shards_vec
-            .into_iter()
-            .nth(checkpoint_id)
-            .unwrap()
-            .into_iter()
-            .map(|shard| {
-                let config = machine.config();
-                log::info!("Commit main");
-                let shard_data =
-                    LocalProver::commit_main(config, &machine, &shard, shard.index() as usize);
-
-                let chip_ordering = shard_data.chip_ordering.clone();
-                let ordered_chips = machine
-                    .shard_chips_ordered(&chip_ordering)
-                    .collect::<Vec<_>>()
-                    .to_vec();
-
-                log::info!("Actually prove shard");
-                LocalProver::prove_shard(
-                    config,
-                    &pk,
-                    &ordered_chips,
-                    shard_data,
-                    &mut challenger.clone(),
-                )
-            })
-            .collect::<Vec<_>>();
-
-        shard_proofs.append(&mut checkpoint_proofs); */
-
-        // let mut proofs = Vec::new();
-
-        let challenger_serialized = bincode::serialize(&challenger).unwrap();
-        let pk_serialized = bincode::serialize(&pk).unwrap();
-
-        /* for checkpoint in checkpoints_states {
-                   let mut shard_proofs = short_circuit_proof(
-                       program.clone(),
-                       stdin,
-                       config.clone(),
-                       opts,
-                       checkpoint,
-                       challenger_serialized.clone(),
-                       pk_serialized.clone(),
-                       public_values,
-                       // &machine,
-                   );
-
-                   proofs.append(&mut shard_proofs);
-               }
-        */
-        // let proof = MachineProof::<SC> { shard_proofs };
-
-        // Print the summary.
-        /* let proving_time = proving_start.elapsed().as_secs_f64();
-        tracing::info!(
-            "summary: cycles={}, e2e={}, khz={:.2}, proofSize={}",
-            runtime.state.global_clk,
-            proving_time,
-            (runtime.state.global_clk as f64 / proving_time as f64),
-            bincode::serialize(&proofs).unwrap().len(),
-        ); */
 
         Ok((
             checkpoints_states,
-            challenger_serialized,
-            pk_serialized,
+            challenger,
             SP1PublicValues::from(&public_values_stream),
             public_values,
         ))
@@ -772,32 +667,19 @@ mod sp1_specifics {
 
     pub fn short_circuit_proof(
         program: Program,
-        // stdin: &SP1Stdin,
         config: BabyBearPoseidon2,
         opts: SP1CoreOpts,
         checkpoint: ExecutionState,
-        mut challenger: Vec<u8>,
-        // pk: Vec<u8>,
+        mut challenger: DuplexChallenger<Val, Perm, 16, 8>,
         public_values: sp1_core::air::PublicValues<u32, u32>,
-        // machine: &StarkMachine<SC, A>,
-    ) -> Vec<ShardProof<BabyBearPoseidon2>>
-/* where
-        SC::Challenger: Clone,
-        OpeningProof<SC>: Send + Sync,
-        Com<SC>: Send + Sync,
-        PcsProverData<SC>: Send + Sync,
-        ShardMainData<SC>: Serialize + DeserializeOwned,
-        <SC as StarkGenericConfig>::Val: PrimeField32, */ {
-        let mut challenger: DuplexChallenger<Val, Perm, 16, 8> =
-            bincode::deserialize(&challenger).unwrap();
-        // let pk = bincode::deserialize(&pk).unwrap();
-
+    ) -> Vec<ShardProof<BabyBearPoseidon2>> {
         let machine = RiscvAir::machine(config.clone());
         let (pk, vk) = machine.setup(&program);
         let sharding_config = ShardingConfig::default();
+
         log::info!("Starting proof shard");
         let mut res = vec![];
-        // let mut checkpoint_proofs = checkpoint_shards_vec.into_iter().for_each(|checkpoint| {
+
         let mut events = {
             let mut runtime = Runtime::recover(program.clone(), checkpoint, opts);
             let (events, _) = tracing::debug_span!("runtime.trace")
