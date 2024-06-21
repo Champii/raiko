@@ -749,7 +749,7 @@ mod sp1_specifics {
             runtime.state.global_clk,
             proving_time,
             (runtime.state.global_clk as f64 / proving_time as f64),
-            bincode::serialize(&shard_proofs).unwrap().len(),
+            bincode::serialize(&proofs).unwrap().len(),
         );
 
         Ok((proofs, SP1PublicValues::from(&public_values_stream)))
