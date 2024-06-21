@@ -343,28 +343,14 @@ mod sp1_specifics {
         let machine = RiscvAir::machine(config);
 
         let machine_config = machine.config();
-        /* let mut challenger = machine_config.challenger();
-
-        let serialized = bincode::serialize(&challenger).unwrap();
-        let deserialized: DuplexChallenger<Val, Perm, 16, 8> =
-            bincode::deserialize(&serialized).unwrap(); */
-
-        /* let serialized = serialize_duplex_challenger(&challenger);
-        let deserialized = deserialize_duplex_challenger(serialized); */
-
-        /* let serialized = unsafe { cast_to_u8(&challenger) };
-        let deserialized = unsafe { cast_from_u8(serialized) }; */
 
         let (pk, vk) = machine.setup(runtime.program.as_ref());
 
-        // For each checkpoint, generate events, shard them, commit shards, and observe in challenger.
         let sharding_config = ShardingConfig::default();
-        // let mut shard_main_datas = Vec::new();
         let machine_config = machine.config();
-        let mut challenger = machine_config.challenger();
-        // Execute the program, saving checkpoints at the start of every `shard_batch_size` cycle range.
         let mut checkpoints = Vec::new();
-        // let mut checkpoint_shards_vec = Vec::new();
+        let mut challenger = machine_config.challenger();
+        vk.observe_into(&mut challenger);
         let (public_values_stream, public_values) = loop {
             let state = runtime.state.clone();
 
@@ -376,34 +362,18 @@ mod sp1_specifics {
 
             checkpoints.push(state);
 
-            // Save the checkpoint to a temp file.
-            /* let mut tempfile = tempfile::tempfile().map_err(SP1CoreProverError::IoError)?;
-            let mut writer = std::io::BufWriter::new(&mut tempfile);
-            bincode::serialize_into(&mut writer, &checkpoint)
-                .map_err(SP1CoreProverError::SerializationError)?;
-            writer.flush().map_err(SP1CoreProverError::IoError)?;
-            drop(writer);
-            tempfile
-                .seek(std::io::SeekFrom::Start(0))
-                .map_err(SP1CoreProverError::IoError)?;
-            println!("CHECKPOINT SIZE: {}", tempfile.metadata().unwrap().len());
-
-            checkpoints.push(tempfile); */
-
             let checkpoint_shards =
                 tracing::info_span!("shard").in_scope(|| machine.shard(record, &sharding_config));
 
             // Commit to each shard.
             let (commitments, commit_data) = tracing::info_span!("commit")
                 .in_scope(|| LocalProver::commit_shards(&machine, &checkpoint_shards, opts));
-            // shard_main_datas.push(commit_data);
 
             // Observe the commitments.
             for (commitment, shard) in commitments.into_iter().zip(checkpoint_shards.iter()) {
                 challenger.observe(commitment);
                 challenger.observe_slice(&shard.public_values::<Val>()[0..machine.num_pv_elts()]);
             }
-            // checkpoint_shards_vec.push(checkpoint_shards);
 
             // If we've reached the final checkpoint, break out of the loop.
             if done {
@@ -413,34 +383,6 @@ mod sp1_specifics {
                 );
             }
         };
-        /* println!("CHECKPOINTS: {}", checkpoints.len());
-
-        for checkpoint_file in checkpoints.iter_mut() {
-            let mut record = trace_checkpoint(program.clone(), checkpoint_file, opts);
-            record.public_values = public_values;
-            reset_seek(&mut *checkpoint_file);
-
-            log::info!(
-                "Record size: {}",
-                bincode::serialize(&record).unwrap().len()
-            );
-
-            // Shard the record into shards.
-            let checkpoint_shards =
-                tracing::info_span!("shard").in_scope(|| machine.shard(record, &sharding_config));
-
-            // Commit to each shard.
-            let (commitments, commit_data) = tracing::info_span!("commit")
-                .in_scope(|| LocalProver::commit_shards(&machine, &checkpoint_shards, opts));
-            shard_main_datas.push(commit_data);
-
-            // Observe the commitments.
-            for (commitment, shard) in commitments.into_iter().zip(checkpoint_shards.iter()) {
-                challenger.observe(commitment);
-                challenger.observe_slice(&shard.public_values::<Val>()[0..machine.num_pv_elts()]);
-            }
-            checkpoint_shards_vec.push(checkpoint_shards);
-        } */
 
         let serialized_challenger = bincode::serialize(&challenger).unwrap();
 
