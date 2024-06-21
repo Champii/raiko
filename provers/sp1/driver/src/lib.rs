@@ -678,7 +678,7 @@ mod sp1_specifics {
         }
 
         // For each checkpoint, generate events and shard again, then prove the shards.
-        let mut shard_proofs = Vec::<ShardProof<BabyBearPoseidon2>>::new();
+        // let mut shard_proofs = Vec::<ShardProof<BabyBearPoseidon2>>::new();
         // let mut checkpoint_file = checkpoints.into_iter().nth(checkpoint_id).unwrap();
 
         /* let checkpoint_shards = {
@@ -721,6 +721,9 @@ mod sp1_specifics {
 
         let mut proofs = Vec::new();
 
+        let challenger_serialized = bincode::serialize(&challenger).unwrap();
+        let pk_serialized = bincode::serialize(&pk).unwrap();
+
         for checkpoint in checkpoints_states {
             let mut shard_proofs = short_circuit_proof(
                 program.clone(),
@@ -728,8 +731,8 @@ mod sp1_specifics {
                 config.clone(),
                 opts,
                 checkpoint,
-                challenger.clone(),
-                pk.clone(),
+                challenger_serialized.clone(),
+                pk_serialized.clone(),
                 public_values,
                 // &machine,
             );
@@ -758,8 +761,8 @@ mod sp1_specifics {
         config: BabyBearPoseidon2,
         opts: SP1CoreOpts,
         checkpoint: ExecutionState,
-        mut challenger: DuplexChallenger<Val, Perm, 16, 8>,
-        pk: sp1_core::stark::StarkProvingKey<BabyBearPoseidon2>,
+        mut challenger: Vec<u8>,
+        pk: Vec<u8>,
         public_values: sp1_core::air::PublicValues<u32, u32>,
         // machine: &StarkMachine<SC, A>,
     ) -> Vec<ShardProof<BabyBearPoseidon2>>
@@ -770,6 +773,9 @@ mod sp1_specifics {
         PcsProverData<SC>: Send + Sync,
         ShardMainData<SC>: Serialize + DeserializeOwned,
         <SC as StarkGenericConfig>::Val: PrimeField32, */ {
+        let mut challenger = bincode::deserialize(&challenger).unwrap();
+        let pk = bincode::deserialize(&pk).unwrap();
+
         let machine = RiscvAir::machine(config.clone());
         let sharding_config = ShardingConfig::default();
         log::info!("Starting proof shard");
