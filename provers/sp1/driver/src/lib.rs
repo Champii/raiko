@@ -721,17 +721,23 @@ mod sp1_specifics {
 
         shard_proofs.append(&mut checkpoint_proofs); */
 
-        let shard_proofs = short_circuit_proof(
-            program,
-            stdin,
-            config,
-            opts,
-            checkpoints_states,
-            challenger,
-            pk,
-            public_values,
-            // &machine,
-        );
+        let mut proofs = Vec::new();
+
+        for checkpoint in checkpoints_states {
+            let mut shard_proofs = short_circuit_proof(
+                program.clone(),
+                stdin,
+                config.clone(),
+                opts,
+                checkpoint,
+                challenger.clone(),
+                pk.clone(),
+                public_values,
+                // &machine,
+            );
+
+            proofs.append(&mut shard_proofs);
+        }
 
         // let proof = MachineProof::<SC> { shard_proofs };
 
@@ -753,7 +759,7 @@ mod sp1_specifics {
         stdin: &SP1Stdin,
         config: SC,
         opts: SP1CoreOpts,
-        checkpoint_shards_vec: Vec<ExecutionState>,
+        checkpoint: ExecutionState,
         mut challenger: <SC as StarkGenericConfig>::Challenger,
         pk: sp1_core::stark::StarkProvingKey<SC>,
         public_values: sp1_core::air::PublicValues<u32, u32>,
@@ -779,44 +785,44 @@ mod sp1_specifics {
         let sharding_config = ShardingConfig::default();
         log::info!("Starting proof shard");
         let mut res = vec![];
-        let mut checkpoint_proofs = checkpoint_shards_vec.into_iter().for_each(|checkpoint| {
-            let mut events = {
-                let mut runtime = Runtime::recover(program.clone(), checkpoint, opts);
-                let (events, _) = tracing::debug_span!("runtime.trace")
-                    .in_scope(|| runtime.execute_record().unwrap());
-                events
-            };
+        // let mut checkpoint_proofs = checkpoint_shards_vec.into_iter().for_each(|checkpoint| {
+        let mut events = {
+            let mut runtime = Runtime::recover(program.clone(), checkpoint, opts);
+            let (events, _) = tracing::debug_span!("runtime.trace")
+                .in_scope(|| runtime.execute_record().unwrap());
+            events
+        };
 
-            events.public_values = public_values;
-            let checkpoint_shards =
-                tracing::info_span!("shard").in_scope(|| machine.shard(events, &sharding_config));
+        events.public_values = public_values;
+        let checkpoint_shards =
+            tracing::info_span!("shard").in_scope(|| machine.shard(events, &sharding_config));
 
-            let mut proofs = checkpoint_shards
-                .into_iter()
-                .map(|shard| {
-                    let config = machine.config();
-                    log::info!("Commit main");
-                    let shard_data =
-                        LocalProver::commit_main(config, &machine, &shard, shard.index() as usize);
+        let mut proofs = checkpoint_shards
+            .into_iter()
+            .map(|shard| {
+                let config = machine.config();
+                log::info!("Commit main");
+                let shard_data =
+                    LocalProver::commit_main(config, &machine, &shard, shard.index() as usize);
 
-                    let chip_ordering = shard_data.chip_ordering.clone();
-                    let ordered_chips = machine
-                        .shard_chips_ordered(&chip_ordering)
-                        .collect::<Vec<_>>()
-                        .to_vec();
+                let chip_ordering = shard_data.chip_ordering.clone();
+                let ordered_chips = machine
+                    .shard_chips_ordered(&chip_ordering)
+                    .collect::<Vec<_>>()
+                    .to_vec();
 
-                    log::info!("Actually prove shard");
-                    LocalProver::prove_shard(
-                        config,
-                        &pk,
-                        &ordered_chips,
-                        shard_data,
-                        &mut challenger.clone(),
-                    )
-                })
-                .collect::<Vec<_>>();
-            res.append(&mut proofs);
-        });
+                log::info!("Actually prove shard");
+                LocalProver::prove_shard(
+                    config,
+                    &pk,
+                    &ordered_chips,
+                    shard_data,
+                    &mut challenger.clone(),
+                )
+            })
+            .collect::<Vec<_>>();
+        res.append(&mut proofs);
+        // });
         return res;
     }
 }
