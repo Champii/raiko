@@ -321,8 +321,15 @@ mod sp1_specifics {
         stdin: &SP1Stdin,
         config: BabyBearPoseidon2,
         opts: SP1CoreOpts,
-    ) -> Result<(Vec<File>, Vec<u8>, SP1PublicValues, PublicValues<u32, u32>), SP1CoreProverError>
-    {
+    ) -> Result<
+        (
+            Vec<ExecutionState>,
+            Vec<u8>,
+            SP1PublicValues,
+            PublicValues<u32, u32>,
+        ),
+        SP1CoreProverError,
+    > {
         let proving_start = Instant::now();
 
         // Execute the program.
@@ -366,6 +373,8 @@ mod sp1_specifics {
             let (record, done) = runtime
                 .execute_record()
                 .map_err(SP1CoreProverError::ExecutionError)?;
+
+            checkpoints.push(state);
 
             // Save the checkpoint to a temp file.
             /* let mut tempfile = tempfile::tempfile().map_err(SP1CoreProverError::IoError)?;

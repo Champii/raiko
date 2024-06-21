@@ -111,8 +111,9 @@ impl Sp1DistributedProver {
         for (i, checkpoint) in checkpoints.iter_mut().enumerate() {
             log::info!("Serializing checkpoint {}", i);
             // let serialized_checkpoint = bincode::serialize(checkpoint).unwrap();
-            let mut serialized_checkpoint = Vec::new();
-            checkpoint.read_to_end(&mut serialized_checkpoint).unwrap();
+            /* let mut serialized_checkpoint = Vec::new();
+            checkpoint.read_to_end(&mut serialized_checkpoint).unwrap(); */
+            let serialized_checkpoint = bincode::serialize(&checkpoint).unwrap();
             log::info!("Serialized checkpoint len {}", serialized_checkpoint.len());
             log::info!("Sending checkpoint {}", i);
             queue_tx.send((i, serialized_checkpoint)).await.unwrap();
