@@ -325,7 +325,7 @@ mod sp1_specifics {
     ) -> Result<
         (
             Vec<ExecutionState>,
-            Vec<u8>,
+            <BabyBearPoseidon2 as StarkGenericConfig>::Challenger,
             SP1PublicValues,
             PublicValues<u32, u32>,
         ),
@@ -401,12 +401,7 @@ mod sp1_specifics {
         println!("CHALLENGER SIZE: {}", serialized_challenger.len());
 
         let public_values_stream = SP1PublicValues::from(&public_values_stream);
-        Ok((
-            checkpoints,
-            serialized_challenger,
-            public_values_stream,
-            public_values,
-        ))
+        Ok((checkpoints, challenger, public_values_stream, public_values))
     }
 
     pub fn prove_partial(
@@ -430,6 +425,78 @@ mod sp1_specifics {
 
         let mut challenger: <BabyBearPoseidon2 as StarkGenericConfig>::Challenger =
             bincode::deserialize(&serialized_challenger).unwrap();
+
+        let mut events = {
+            let mut runtime = Runtime::recover(program.clone(), checkpoint, opts);
+            let (events, _) = tracing::debug_span!("runtime.trace")
+                .in_scope(|| runtime.execute_record().unwrap());
+            events
+        };
+
+        events.public_values = public_values;
+
+        let sharding_config = ShardingConfig::default();
+        let checkpoint = machine.shard(events, &sharding_config);
+
+        log::info!("Starting proof shard");
+        let mut checkpoint_proofs = checkpoint
+            .into_iter()
+            .map(|shard| {
+                let config = machine.config();
+                log::info!("Commit main");
+                let shard_data =
+                    LocalProver::commit_main(config, &machine, &shard, shard.index() as usize);
+
+                let chip_ordering = shard_data.chip_ordering.clone();
+                let ordered_chips = machine
+                    .shard_chips_ordered(&chip_ordering)
+                    .collect::<Vec<_>>()
+                    .to_vec();
+
+                log::info!("Actually prove shard");
+                LocalProver::prove_shard(
+                    config,
+                    &pk,
+                    &ordered_chips,
+                    shard_data,
+                    &mut challenger.clone(),
+                )
+            })
+            .collect::<Vec<_>>();
+
+        shard_proofs.append(&mut checkpoint_proofs);
+
+        let proving_time = proving_start.elapsed().as_secs_f64();
+
+        tracing::info!(
+            "Proving checkpoint {} took {}s",
+            checkpoint_id,
+            proving_time
+        );
+
+        Ok(shard_proofs)
+    }
+    pub fn prove_partial_local(
+        program: Program,
+        stdin: &SP1Stdin,
+        config: BabyBearPoseidon2,
+        opts: SP1CoreOpts,
+        checkpoint: ExecutionState,
+        mut challenger: <BabyBearPoseidon2 as StarkGenericConfig>::Challenger,
+        checkpoint_id: usize,
+        public_values: sp1_core::air::PublicValues<u32, u32>,
+    ) -> Result<Vec<ShardProof<BabyBearPoseidon2>>, SP1CoreProverError> {
+        let proving_start = Instant::now();
+
+        // Setup the machine.
+        let machine = RiscvAir::machine(config);
+        let (pk, vk) = machine.setup(&program);
+
+        // For each checkpoint, generate events and shard again, then prove the shards.
+        let mut shard_proofs = Vec::<ShardProof<BabyBearPoseidon2>>::new();
+
+        /* let mut challenger: <BabyBearPoseidon2 as StarkGenericConfig>::Challenger =
+        bincode::deserialize(&serialized_challenger).unwrap(); */
 
         let mut events = {
             let mut runtime = Runtime::recover(program.clone(), checkpoint, opts);

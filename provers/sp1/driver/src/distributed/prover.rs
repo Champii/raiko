@@ -12,7 +12,7 @@ use sp1_core::{runtime::Program, utils::SP1CoreOpts};
 use sp1_sdk::{CoreSC, ProverClient, SP1Stdin};
 
 use crate::{
-    sp1_specifics::{compute_trace_and_challenger, prove_partial},
+    sp1_specifics::{compute_trace_and_challenger, prove_partial, prove_partial_local},
     Sp1Response, ELF,
 };
 
@@ -65,8 +65,9 @@ impl Sp1DistributedProver {
         let mut opts = SP1CoreOpts::default();
         opts.shard_batch_size = 1;
 
-        let (mut checkpoints, serialized_challenger, public_values_stream, public_values) =
-            compute_trace_and_challenger(program, &stdin, proving_config, opts).unwrap();
+        let (mut checkpoints, challenger, public_values_stream, public_values) =
+            compute_trace_and_challenger(program.clone(), &stdin, proving_config.clone(), opts)
+                .unwrap();
 
         let mut config = config.clone();
 
@@ -83,78 +84,87 @@ impl Sp1DistributedProver {
 
         log::info!("Number of checkpoints: {}", checkpoints.len());
 
-        let (queue_tx, queue_rx) = async_channel::unbounded();
-        let (answer_tx, answer_rx) = async_channel::unbounded();
+        /* let (queue_tx, queue_rx) = async_channel::unbounded();
+        let (answer_tx, answer_rx) = async_channel::unbounded(); */
 
         let public_values_serialized = bincode::serialize(&public_values).unwrap();
 
-        // Spawn the workers
-        for (i, url) in ip_list.iter().enumerate() {
-            let worker = Worker::new(
-                i,
-                "http://".to_string() + url + "/proof/partial".into(),
-                config.clone(),
-                queue_rx.clone(),
-                answer_tx.clone(),
-                queue_tx.clone(),
-                public_values_serialized.clone(),
-                serialized_challenger.clone(),
-            );
+        /* // Spawn the workers
+               for (i, url) in ip_list.iter().enumerate() {
+                   let worker = Worker::new(
+                       i,
+                       "http://".to_string() + url + "/proof/partial".into(),
+                       config.clone(),
+                       queue_rx.clone(),
+                       answer_tx.clone(),
+                       queue_tx.clone(),
+                       public_values_serialized.clone(),
+                       serialized_challenger.clone(),
+                   );
 
-            tokio::spawn(async move {
-                worker.run().await;
-            });
-        }
+                   tokio::spawn(async move {
+                       worker.run().await;
+                   });
+               }
 
-        // Send the checkpoints to the workers
-        // for i in 0..nb_checkpoint {
-        for (i, checkpoint) in checkpoints.iter_mut().enumerate() {
-            log::info!("Serializing checkpoint {}", i);
-            // let serialized_checkpoint = bincode::serialize(checkpoint).unwrap();
-            /* let mut serialized_checkpoint = Vec::new();
-            checkpoint.read_to_end(&mut serialized_checkpoint).unwrap(); */
-            let serialized_checkpoint = bincode::serialize(&checkpoint).unwrap();
-            log::info!("Serialized checkpoint len {}", serialized_checkpoint.len());
-            log::info!("Sending checkpoint {}", i);
-            queue_tx.send((i, serialized_checkpoint)).await.unwrap();
-        }
+               // Send the checkpoints to the workers
+               // for i in 0..nb_checkpoint {
+               for (i, checkpoint) in checkpoints.iter_mut().enumerate() {
+                   log::info!("Serializing checkpoint {}", i);
+                   // let serialized_checkpoint = bincode::serialize(checkpoint).unwrap();
+                   /* let mut serialized_checkpoint = Vec::new();
+                   checkpoint.read_to_end(&mut serialized_checkpoint).unwrap(); */
+                   let serialized_checkpoint = bincode::serialize(&checkpoint).unwrap();
+                   log::info!("Serialized checkpoint len {}", serialized_checkpoint.len());
+                   log::info!("Sending checkpoint {}", i);
+                   queue_tx.send((i, serialized_checkpoint)).await.unwrap();
+               }
+
+               let mut proofs = Vec::new();
+
+               // Get the partial proofs from the workers
+               loop {
+                   let (checkpoint_id, partial_proof_json) = answer_rx.recv().await.unwrap();
+
+                   let partial_proof =
+                       serde_json::from_str::<Vec<_>>(partial_proof_json.as_str()).unwrap();
+
+                   std::fs::write(
+                       format!("partial_proof_{}.json", checkpoint_id),
+                       partial_proof_json,
+                   )
+                   .unwrap();
+
+                   proofs.push((checkpoint_id, partial_proof));
+
+                   if proofs.len() == checkpoints.len() {
+                       break;
+                   }
+               }
+        */
 
         let mut proofs = Vec::new();
-
-        // Get the partial proofs from the workers
-        loop {
-            let (checkpoint_id, partial_proof_json) = answer_rx.recv().await.unwrap();
-
-            let partial_proof =
-                serde_json::from_str::<Vec<_>>(partial_proof_json.as_str()).unwrap();
-
-            std::fs::write(
-                format!("partial_proof_{}.json", checkpoint_id),
-                partial_proof_json,
-            )
-            .unwrap();
-
-            proofs.push((checkpoint_id, partial_proof));
-
-            if proofs.len() == checkpoints.len() {
-                break;
-            }
-        }
-
-        /* for (i, checkpoint) in checkpoints.iter().enumerate() {
-            let proof = Self::run_as_worker(
-                input.clone(),
-                &config,
-                &PartialProofRequestData {
+        for (i, checkpoint) in checkpoints.iter().enumerate() {
+            let proof = prove_partial_local(
+                program.clone(),
+                &stdin,
+                proving_config.clone(),
+                opts.clone(),
+                checkpoint.clone(),
+                challenger.clone(),
+                i,
+                public_values.clone(),
+                /* &PartialProofRequestData {
                     checkpoint_id: i,
                     request: config.clone(),
                     serialized_challenger: serialized_challenger.clone(),
                     checkpoint_data: bincode::serialize(&checkpoint).unwrap(),
                     public_values: public_values_serialized.clone(),
-                },
-            ).unwrap();
-            proofs.push()
-        } */
+                }, */
+            )
+            .unwrap();
+            proofs.push((i, proof));
+        }
 
         proofs.sort_by(|(checkpoint_id_a, _), (checkpoint_id_b, _)| {
             checkpoint_id_a.cmp(checkpoint_id_b)
