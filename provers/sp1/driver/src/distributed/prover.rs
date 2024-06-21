@@ -65,9 +65,14 @@ impl Sp1DistributedProver {
         let mut opts = SP1CoreOpts::default();
         opts.shard_batch_size = 1;
 
-        let (mut checkpoints, challenger, public_values_stream, public_values) =
-            compute_trace_and_challenger(program.clone(), &stdin, proving_config.clone(), opts)
-                .unwrap();
+        let (
+            mut checkpoints,
+            serialized_challenger,
+            serialized_pk,
+            public_values_stream,
+            public_values,
+        ) = compute_trace_and_challenger(program.clone(), &stdin, proving_config.clone(), opts)
+            .unwrap();
 
         let mut config = config.clone();
 
@@ -84,66 +89,66 @@ impl Sp1DistributedProver {
 
         log::info!("Number of checkpoints: {}", checkpoints.len());
 
-        /* let (queue_tx, queue_rx) = async_channel::unbounded();
-        let (answer_tx, answer_rx) = async_channel::unbounded(); */
+        let (queue_tx, queue_rx) = async_channel::unbounded();
+        let (answer_tx, answer_rx) = async_channel::unbounded();
 
         let public_values_serialized = bincode::serialize(&public_values).unwrap();
 
-        /* // Spawn the workers
-               for (i, url) in ip_list.iter().enumerate() {
-                   let worker = Worker::new(
-                       i,
-                       "http://".to_string() + url + "/proof/partial".into(),
-                       config.clone(),
-                       queue_rx.clone(),
-                       answer_tx.clone(),
-                       queue_tx.clone(),
-                       public_values_serialized.clone(),
-                       serialized_challenger.clone(),
-                   );
+        // Spawn the workers
+        for (i, url) in ip_list.iter().enumerate() {
+            let worker = Worker::new(
+                i,
+                "http://".to_string() + url + "/proof/partial".into(),
+                config.clone(),
+                queue_rx.clone(),
+                answer_tx.clone(),
+                queue_tx.clone(),
+                public_values_serialized.clone(),
+                serialized_challenger.clone(),
+                serialized_pk.clone(),
+            );
 
-                   tokio::spawn(async move {
-                       worker.run().await;
-                   });
-               }
+            tokio::spawn(async move {
+                worker.run().await;
+            });
+        }
 
-               // Send the checkpoints to the workers
-               // for i in 0..nb_checkpoint {
-               for (i, checkpoint) in checkpoints.iter_mut().enumerate() {
-                   log::info!("Serializing checkpoint {}", i);
-                   // let serialized_checkpoint = bincode::serialize(checkpoint).unwrap();
-                   /* let mut serialized_checkpoint = Vec::new();
-                   checkpoint.read_to_end(&mut serialized_checkpoint).unwrap(); */
-                   let serialized_checkpoint = bincode::serialize(&checkpoint).unwrap();
-                   log::info!("Serialized checkpoint len {}", serialized_checkpoint.len());
-                   log::info!("Sending checkpoint {}", i);
-                   queue_tx.send((i, serialized_checkpoint)).await.unwrap();
-               }
-
-               let mut proofs = Vec::new();
-
-               // Get the partial proofs from the workers
-               loop {
-                   let (checkpoint_id, partial_proof_json) = answer_rx.recv().await.unwrap();
-
-                   let partial_proof =
-                       serde_json::from_str::<Vec<_>>(partial_proof_json.as_str()).unwrap();
-
-                   std::fs::write(
-                       format!("partial_proof_{}.json", checkpoint_id),
-                       partial_proof_json,
-                   )
-                   .unwrap();
-
-                   proofs.push((checkpoint_id, partial_proof));
-
-                   if proofs.len() == checkpoints.len() {
-                       break;
-                   }
-               }
-        */
+        // Send the checkpoints to the workers
+        // for i in 0..nb_checkpoint {
+        for (i, checkpoint) in checkpoints.iter_mut().enumerate() {
+            log::info!("Serializing checkpoint {}", i);
+            // let serialized_checkpoint = bincode::serialize(checkpoint).unwrap();
+            /* let mut serialized_checkpoint = Vec::new();
+            checkpoint.read_to_end(&mut serialized_checkpoint).unwrap(); */
+            let serialized_checkpoint = bincode::serialize(&checkpoint).unwrap();
+            log::info!("Serialized checkpoint len {}", serialized_checkpoint.len());
+            log::info!("Sending checkpoint {}", i);
+            queue_tx.send((i, serialized_checkpoint)).await.unwrap();
+        }
 
         let mut proofs = Vec::new();
+
+        // Get the partial proofs from the workers
+        loop {
+            let (checkpoint_id, partial_proof_json) = answer_rx.recv().await.unwrap();
+
+            let partial_proof =
+                serde_json::from_str::<Vec<_>>(partial_proof_json.as_str()).unwrap();
+
+            std::fs::write(
+                format!("partial_proof_{}.json", checkpoint_id),
+                partial_proof_json,
+            )
+            .unwrap();
+
+            proofs.push((checkpoint_id as usize, partial_proof));
+
+            if proofs.len() == checkpoints.len() {
+                break;
+            }
+        }
+
+        /* let mut proofs = Vec::new();
         for (i, checkpoint) in checkpoints.iter().enumerate() {
             let proof = prove_partial_local(
                 program.clone(),
@@ -164,7 +169,7 @@ impl Sp1DistributedProver {
             )
             .unwrap();
             proofs.push((i, proof));
-        }
+        } */
 
         proofs.sort_by(|(checkpoint_id_a, _), (checkpoint_id_b, _)| {
             checkpoint_id_a.cmp(checkpoint_id_b)
@@ -244,15 +249,15 @@ impl Sp1DistributedProver {
 
         println!("Running SP1 Distributed worker {}", data.checkpoint_id);
 
-        let mut stdin = SP1Stdin::new();
-        stdin.write(&input);
+        /* let mut stdin = SP1Stdin::new();
+        stdin.write(&input); */
 
         // Generate the proof for the given program.
-        let client = ProverClient::new();
-        let (pk, _vk) = client.setup(ELF);
+        /* let client = ProverClient::new();
+        let (pk, _vk) = client.setup(ELF); */
 
         let config = CoreSC::default();
-        let program = Program::from(&pk.elf);
+        let program = Program::from(ELF);
         let mut opts = SP1CoreOpts::default();
         opts.shard_batch_size = 1;
 
@@ -260,11 +265,12 @@ impl Sp1DistributedProver {
 
         let partial_proof = prove_partial(
             program,
-            &stdin,
+            // &stdin,
             config,
             opts,
             checkpoint_data,
             data.serialized_challenger.clone(),
+            data.serialized_pk.clone(),
             data.checkpoint_id,
             bincode::deserialize(&data.public_values).unwrap(),
         )

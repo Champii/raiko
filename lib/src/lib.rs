@@ -47,6 +47,7 @@ pub struct PartialProofRequestData {
     pub checkpoint_id: usize,
     pub checkpoint_data: Vec<u8>,
     pub serialized_challenger: Vec<u8>,
+    pub serialized_pk: Vec<u8>,
     pub public_values: Vec<u8>,
 }
 

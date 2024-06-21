@@ -20,6 +20,7 @@ pub struct Worker {
     queue_push_back: Sender<(usize, Vec<u8>)>,
     public_values: Vec<u8>,
     serialized_challenger: Vec<u8>,
+    serialized_pk: Vec<u8>,
 }
 
 impl Worker {
@@ -32,6 +33,7 @@ impl Worker {
         queue_push_back: Sender<(usize, Vec<u8>)>,
         public_values: Vec<u8>,
         serialized_challenger: Vec<u8>,
+        serialized_pk: Vec<u8>,
     ) -> Self {
         Worker {
             id,
@@ -42,6 +44,7 @@ impl Worker {
             queue_push_back,
             public_values,
             serialized_challenger,
+            serialized_pk,
         }
     }
 
@@ -85,6 +88,7 @@ impl Worker {
             checkpoint_data: checkpoint,
             serialized_challenger: self.serialized_challenger.clone(),
             public_values: self.public_values.clone(),
+            serialized_pk: self.serialized_pk.clone(),
         };
 
         log::info!("Serializing...");

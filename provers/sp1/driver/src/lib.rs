@@ -325,7 +325,8 @@ mod sp1_specifics {
     ) -> Result<
         (
             Vec<ExecutionState>,
-            <BabyBearPoseidon2 as StarkGenericConfig>::Challenger,
+            Vec<u8>,
+            Vec<u8>,
             SP1PublicValues,
             PublicValues<u32, u32>,
         ),
@@ -396,21 +397,30 @@ mod sp1_specifics {
         let deserialized_challenger: <BabyBearPoseidon2 as StarkGenericConfig>::Challenger =
             bincode::deserialize(&serialized_challenger).unwrap();
 
+        let serialized_pk = bincode::serialize(&pk).unwrap();
+
         // assert_eq!(format!("{:?}", challenger), format!("{:?}", deserialized_challenger)
 
         println!("CHALLENGER SIZE: {}", serialized_challenger.len());
 
         let public_values_stream = SP1PublicValues::from(&public_values_stream);
-        Ok((checkpoints, challenger, public_values_stream, public_values))
+        Ok((
+            checkpoints,
+            serialized_challenger,
+            serialized_pk,
+            public_values_stream,
+            public_values,
+        ))
     }
 
     pub fn prove_partial(
         program: Program,
-        stdin: &SP1Stdin,
+        // stdin: &SP1Stdin,
         config: BabyBearPoseidon2,
         opts: SP1CoreOpts,
         checkpoint: ExecutionState,
         serialized_challenger: Vec<u8>,
+        serialized_pk: Vec<u8>,
         checkpoint_id: usize,
         public_values: sp1_core::air::PublicValues<u32, u32>,
     ) -> Result<Vec<ShardProof<BabyBearPoseidon2>>, SP1CoreProverError> {
@@ -418,7 +428,9 @@ mod sp1_specifics {
 
         // Setup the machine.
         let machine = RiscvAir::machine(config);
-        let (pk, vk) = machine.setup(&program);
+        // let (pk, vk) = machine.setup(&program);
+
+        let pk = bincode::deserialize(&serialized_pk).unwrap();
 
         // For each checkpoint, generate events and shard again, then prove the shards.
         let mut shard_proofs = Vec::<ShardProof<BabyBearPoseidon2>>::new();
