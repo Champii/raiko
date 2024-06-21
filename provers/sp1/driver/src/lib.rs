@@ -570,21 +570,20 @@ mod sp1_specifics {
         Ok(shard_proofs)
     }
 
-    pub fn prove_partial_old<SC: StarkGenericConfig + Send + Sync>(
+    pub fn prove_partial_old(
         program: Program,
         stdin: &SP1Stdin,
-        config: SC,
+        config: BabyBearPoseidon2,
         opts: SP1CoreOpts,
         // checkpoint_id: usize,
-    ) -> Result<(Vec<ShardProof<SC>>, SP1PublicValues), SP1CoreProverError>
-    where
+    ) -> Result<(Vec<ShardProof<BabyBearPoseidon2>>, SP1PublicValues), SP1CoreProverError>
+/* where
         SC::Challenger: Clone,
         OpeningProof<SC>: Send + Sync,
         Com<SC>: Send + Sync,
         PcsProverData<SC>: Send + Sync,
         ShardMainData<SC>: Serialize + DeserializeOwned,
-        <SC as StarkGenericConfig>::Val: PrimeField32,
-    {
+        <SC as StarkGenericConfig>::Val: PrimeField32, */ {
         let proving_start = Instant::now();
 
         // Execute the program.
@@ -650,11 +649,11 @@ mod sp1_specifics {
 
         // For each checkpoint, generate events, shard them, commit shards, and observe in challenger.
         let sharding_config = ShardingConfig::default();
-        let mut shard_main_datas = Vec::new();
+        // let mut shard_main_datas = Vec::new();
         let mut challenger = machine.config().challenger();
         vk.observe_into(&mut challenger);
 
-        let mut checkpoint_shards_vec = Vec::new();
+        // let mut checkpoint_shards_vec = Vec::new();
 
         for checkpoint_file in checkpoints.iter_mut() {
             let mut record = trace_checkpoint(program.clone(), checkpoint_file, opts);
@@ -668,19 +667,18 @@ mod sp1_specifics {
             // Commit to each shard.
             let (commitments, commit_data) = tracing::info_span!("commit")
                 .in_scope(|| LocalProver::commit_shards(&machine, &checkpoint_shards, opts));
-            shard_main_datas.push(commit_data);
+            // shard_main_datas.push(commit_data);
 
             // Observe the commitments.
             for (commitment, shard) in commitments.into_iter().zip(checkpoint_shards.iter()) {
                 challenger.observe(commitment);
-                challenger
-                    .observe_slice(&shard.public_values::<SC::Val>()[0..machine.num_pv_elts()]);
+                challenger.observe_slice(&shard.public_values::<Val>()[0..machine.num_pv_elts()]);
             }
-            checkpoint_shards_vec.push(checkpoint_shards);
+            // checkpoint_shards_vec.push(checkpoint_shards);
         }
 
         // For each checkpoint, generate events and shard again, then prove the shards.
-        let mut shard_proofs = Vec::<ShardProof<SC>>::new();
+        let mut shard_proofs = Vec::<ShardProof<BabyBearPoseidon2>>::new();
         // let mut checkpoint_file = checkpoints.into_iter().nth(checkpoint_id).unwrap();
 
         /* let checkpoint_shards = {
@@ -751,36 +749,27 @@ mod sp1_specifics {
             bincode::serialize(&shard_proofs).unwrap().len(),
         );
 
-        Ok((shard_proofs, SP1PublicValues::from(&public_values_stream)))
+        Ok((proofs, SP1PublicValues::from(&public_values_stream)))
     }
 
-    pub fn short_circuit_proof<SC: StarkGenericConfig + Sync + Send>(
+    pub fn short_circuit_proof(
         program: Program,
         stdin: &SP1Stdin,
-        config: SC,
+        config: BabyBearPoseidon2,
         opts: SP1CoreOpts,
         checkpoint: ExecutionState,
-        mut challenger: <SC as StarkGenericConfig>::Challenger,
-        pk: sp1_core::stark::StarkProvingKey<SC>,
+        mut challenger: DuplexChallenger<Val, Perm, 16, 8>,
+        pk: sp1_core::stark::StarkProvingKey<BabyBearPoseidon2>,
         public_values: sp1_core::air::PublicValues<u32, u32>,
         // machine: &StarkMachine<SC, A>,
-    ) -> Vec<ShardProof<SC>>
-    where
-        /* SC: StarkGenericConfig,
-        SC::Challenger: Clone,
-        A: MachineAir<SC::Val>,
-        Com<SC>: Send + Sync,
-        PcsProverData<SC>: Send + Sync,
-        ShardMainData<SC>: Serialize + DeserializeOwned,
-        <SC as StarkGenericConfig>::Val: PrimeField32, */
-        // A: MachineAir<SC::Val> + for<'a> air::Air<sp1_core::stark::ProverConstraintFolder<'a, SC>>,
+    ) -> Vec<ShardProof<BabyBearPoseidon2>>
+/* where
         SC::Challenger: Clone,
         OpeningProof<SC>: Send + Sync,
         Com<SC>: Send + Sync,
         PcsProverData<SC>: Send + Sync,
         ShardMainData<SC>: Serialize + DeserializeOwned,
-        <SC as StarkGenericConfig>::Val: PrimeField32,
-    {
+        <SC as StarkGenericConfig>::Val: PrimeField32, */ {
         let machine = RiscvAir::machine(config.clone());
         let sharding_config = ShardingConfig::default();
         log::info!("Starting proof shard");
