@@ -12,7 +12,10 @@ use sp1_core::{runtime::Program, utils::SP1CoreOpts};
 use sp1_sdk::{CoreSC, ProverClient, SP1Stdin};
 
 use crate::{
-    sp1_specifics::{compute_trace_and_challenger, prove_partial, prove_partial_local},
+    sp1_specifics::{
+        compute_trace_and_challenger, prove_partial, prove_partial_local, prove_partial_old,
+        short_circuit_proof,
+    },
     Sp1Response, ELF,
 };
 
@@ -65,16 +68,40 @@ impl Sp1DistributedProver {
         let mut opts = SP1CoreOpts::default();
         opts.shard_batch_size = 1;
 
-        let (
-            mut checkpoints,
-            serialized_challenger,
-            serialized_pk,
-            public_values_stream,
-            public_values,
-        ) = compute_trace_and_challenger(program.clone(), &stdin, proving_config.clone(), opts)
-            .unwrap();
+        /* let (
+                   mut checkpoints,
+                   serialized_challenger,
+                   serialized_pk,
+                   public_values_stream,
+                   public_values,
+                   machine,
+                   challenger,
+                   pk,
+               ) = compute_trace_and_challenger(program.clone(), &stdin, proving_config.clone(), opts)
+                   .unwrap();
+        */
+        /* let proofs = short_circuit_proof(
+                   program.clone(),
+                   &stdin,
+                   proving_config.clone(),
+                   opts.clone(),
+                   checkpoints,
+                   challenger.clone(),
+                   pk.clone(),
+                   public_values.clone(),
+                   &machine,
+               );
+        */
 
-        let mut config = config.clone();
+        let (proofs, public_values_stream) = prove_partial_old(
+            program.clone(),
+            &stdin,
+            proving_config.clone(),
+            opts.clone(),
+        )
+        .unwrap();
+
+        /* let mut config = config.clone();
 
         // Fixing the network and proof type to be forwarded to the workers
         let mut_config = config.as_object_mut().unwrap();
@@ -182,7 +209,7 @@ impl Sp1DistributedProver {
                 proof
             })
             .flatten()
-            .collect();
+            .collect(); */
 
         let proof = sp1_sdk::SP1ProofWithPublicValues {
             proof: proofs,

@@ -48,6 +48,7 @@ mod sp1_specifics {
     use serde::ser::SerializeTuple;
     use serde::Serializer;
     use serde::{de::DeserializeOwned, Deserialize, Serialize};
+    use sp1_core::air::MachineAir;
     /* use serde_remote::as_u8_eq;
     use serde_remote::cast_from_u8;
     use serde_remote::cast_to_u8;
@@ -56,6 +57,8 @@ mod sp1_specifics {
     use sp1_core::air::PublicValues;
     use sp1_core::runtime::ExecutionRecord;
     use sp1_core::runtime::ExecutionState;
+    use sp1_core::stark::StarkMachine;
+    use sp1_core::stark::StarkProvingKey;
     use sp1_core::utils::baby_bear_poseidon2::Perm;
     use sp1_core::utils::baby_bear_poseidon2::Val;
     use sp1_core::utils::BabyBearPoseidon2;
@@ -259,7 +262,7 @@ mod sp1_specifics {
         }
     } */
 
-    /* fn trace_checkpoint(program: Program, file: &File, opts: SP1CoreOpts) -> ExecutionRecord {
+    fn trace_checkpoint(program: Program, file: &File, opts: SP1CoreOpts) -> ExecutionRecord {
         let mut reader = std::io::BufReader::new(file);
         let state = bincode::deserialize_from(&mut reader).expect("failed to deserialize state");
         let mut runtime = Runtime::recover(program.clone(), state, opts);
@@ -271,7 +274,7 @@ mod sp1_specifics {
     fn reset_seek(file: &mut File) {
         file.seek(std::io::SeekFrom::Start(0))
             .expect("failed to seek to start of tempfile");
-    } */
+    }
 
     /* pub fn nb_checkpoints(
         elf: &[u8],
@@ -329,6 +332,9 @@ mod sp1_specifics {
             Vec<u8>,
             SP1PublicValues,
             PublicValues<u32, u32>,
+            StarkMachine<CoreSC, RiscvAir<BabyBear>>,
+            <BabyBearPoseidon2 as StarkGenericConfig>::Challenger,
+            StarkProvingKey<BabyBearPoseidon2>,
         ),
         SP1CoreProverError,
     > {
@@ -410,6 +416,9 @@ mod sp1_specifics {
             serialized_pk,
             public_values_stream,
             public_values,
+            machine,
+            challenger,
+            pk,
         ))
     }
 
@@ -559,5 +568,255 @@ mod sp1_specifics {
         );
 
         Ok(shard_proofs)
+    }
+
+    pub fn prove_partial_old<SC: StarkGenericConfig + Send + Sync>(
+        program: Program,
+        stdin: &SP1Stdin,
+        config: SC,
+        opts: SP1CoreOpts,
+        // checkpoint_id: usize,
+    ) -> Result<(Vec<ShardProof<SC>>, SP1PublicValues), SP1CoreProverError>
+    where
+        SC::Challenger: Clone,
+        OpeningProof<SC>: Send + Sync,
+        Com<SC>: Send + Sync,
+        PcsProverData<SC>: Send + Sync,
+        ShardMainData<SC>: Serialize + DeserializeOwned,
+        <SC as StarkGenericConfig>::Val: PrimeField32,
+    {
+        let proving_start = Instant::now();
+
+        // Execute the program.
+        let mut runtime = Runtime::new(program.clone(), opts);
+        runtime.write_vecs(&stdin.buffer);
+        for proof in stdin.proofs.iter() {
+            runtime.write_proof(proof.0.clone(), proof.1.clone());
+        }
+
+        // Setup the machine.
+        let machine = RiscvAir::machine(config.clone());
+        let (pk, vk) = machine.setup(runtime.program.as_ref());
+
+        // If we don't need to batch, we can just run the program normally and prove it.
+        /* if opts.shard_batch_size == 0 {
+            // Execute the runtime and collect all the events..
+            runtime.run().map_err(SP1CoreProverError::ExecutionError)?;
+
+            // If debugging is enabled, we will also debug the constraints.
+            #[cfg(feature = "debug")]
+            {
+                let mut challenger = machine.config().challenger();
+                machine.debug_constraints(&pk, runtime.record.clone(), &mut challenger);
+            }
+
+            // Generate the proof and return the proof and public values.
+            let public_values = std::mem::take(&mut runtime.state.public_values_stream);
+            let proof = prove_simple(machine.config().clone(), runtime)?;
+            return Ok(proof);
+        } */
+
+        // Execute the program, saving checkpoints at the start of every `shard_batch_size` cycle range.
+        let mut checkpoints = Vec::new();
+        let mut checkpoints_states = Vec::new();
+        let (public_values_stream, public_values) = loop {
+            // Execute the runtime until we reach a checkpoint.
+            let (checkpoint, done) = runtime
+                .execute_state()
+                .map_err(SP1CoreProverError::ExecutionError)?;
+            checkpoints_states.push(checkpoint.clone());
+
+            // Save the checkpoint to a temp file.
+            let mut tempfile = tempfile::tempfile().map_err(SP1CoreProverError::IoError)?;
+            let mut writer = std::io::BufWriter::new(&mut tempfile);
+            bincode::serialize_into(&mut writer, &checkpoint)
+                .map_err(SP1CoreProverError::SerializationError)?;
+            writer.flush().map_err(SP1CoreProverError::IoError)?;
+            drop(writer);
+            tempfile
+                .seek(std::io::SeekFrom::Start(0))
+                .map_err(SP1CoreProverError::IoError)?;
+            checkpoints.push(tempfile);
+
+            // If we've reached the final checkpoint, break out of the loop.
+            if done {
+                break (
+                    std::mem::take(&mut runtime.state.public_values_stream),
+                    runtime.record.public_values,
+                );
+            }
+        };
+        println!("CHECKPOINTS: {}", checkpoints.len());
+
+        // For each checkpoint, generate events, shard them, commit shards, and observe in challenger.
+        let sharding_config = ShardingConfig::default();
+        let mut shard_main_datas = Vec::new();
+        let mut challenger = machine.config().challenger();
+        vk.observe_into(&mut challenger);
+
+        let mut checkpoint_shards_vec = Vec::new();
+
+        for checkpoint_file in checkpoints.iter_mut() {
+            let mut record = trace_checkpoint(program.clone(), checkpoint_file, opts);
+            record.public_values = public_values;
+            reset_seek(&mut *checkpoint_file);
+
+            // Shard the record into shards.
+            let checkpoint_shards =
+                tracing::info_span!("shard").in_scope(|| machine.shard(record, &sharding_config));
+
+            // Commit to each shard.
+            let (commitments, commit_data) = tracing::info_span!("commit")
+                .in_scope(|| LocalProver::commit_shards(&machine, &checkpoint_shards, opts));
+            shard_main_datas.push(commit_data);
+
+            // Observe the commitments.
+            for (commitment, shard) in commitments.into_iter().zip(checkpoint_shards.iter()) {
+                challenger.observe(commitment);
+                challenger
+                    .observe_slice(&shard.public_values::<SC::Val>()[0..machine.num_pv_elts()]);
+            }
+            checkpoint_shards_vec.push(checkpoint_shards);
+        }
+
+        // For each checkpoint, generate events and shard again, then prove the shards.
+        let mut shard_proofs = Vec::<ShardProof<SC>>::new();
+        // let mut checkpoint_file = checkpoints.into_iter().nth(checkpoint_id).unwrap();
+
+        /* let checkpoint_shards = {
+            let mut events = trace_checkpoint(program.clone(), &checkpoint_file, opts);
+            events.public_values = public_values;
+            reset_seek(&mut checkpoint_file);
+            tracing::debug_span!("shard").in_scope(|| machine.shard(events, &sharding_config))
+        }; */
+
+        /* log::info!("Starting proof shard");
+        let mut checkpoint_proofs = checkpoint_shards_vec
+            .into_iter()
+            .nth(checkpoint_id)
+            .unwrap()
+            .into_iter()
+            .map(|shard| {
+                let config = machine.config();
+                log::info!("Commit main");
+                let shard_data =
+                    LocalProver::commit_main(config, &machine, &shard, shard.index() as usize);
+
+                let chip_ordering = shard_data.chip_ordering.clone();
+                let ordered_chips = machine
+                    .shard_chips_ordered(&chip_ordering)
+                    .collect::<Vec<_>>()
+                    .to_vec();
+
+                log::info!("Actually prove shard");
+                LocalProver::prove_shard(
+                    config,
+                    &pk,
+                    &ordered_chips,
+                    shard_data,
+                    &mut challenger.clone(),
+                )
+            })
+            .collect::<Vec<_>>();
+
+        shard_proofs.append(&mut checkpoint_proofs); */
+
+        let shard_proofs = short_circuit_proof(
+            program,
+            stdin,
+            config,
+            opts,
+            checkpoints_states,
+            challenger,
+            pk,
+            public_values,
+            // &machine,
+        );
+
+        // let proof = MachineProof::<SC> { shard_proofs };
+
+        // Print the summary.
+        let proving_time = proving_start.elapsed().as_secs_f64();
+        tracing::info!(
+            "summary: cycles={}, e2e={}, khz={:.2}, proofSize={}",
+            runtime.state.global_clk,
+            proving_time,
+            (runtime.state.global_clk as f64 / proving_time as f64),
+            bincode::serialize(&shard_proofs).unwrap().len(),
+        );
+
+        Ok((shard_proofs, SP1PublicValues::from(&public_values_stream)))
+    }
+
+    pub fn short_circuit_proof<SC: StarkGenericConfig + Sync + Send>(
+        program: Program,
+        stdin: &SP1Stdin,
+        config: SC,
+        opts: SP1CoreOpts,
+        checkpoint_shards_vec: Vec<ExecutionState>,
+        mut challenger: <SC as StarkGenericConfig>::Challenger,
+        pk: sp1_core::stark::StarkProvingKey<SC>,
+        public_values: sp1_core::air::PublicValues<u32, u32>,
+        // machine: &StarkMachine<SC, A>,
+    ) -> Vec<ShardProof<SC>>
+    where
+        /* SC: StarkGenericConfig,
+        SC::Challenger: Clone,
+        A: MachineAir<SC::Val>,
+        Com<SC>: Send + Sync,
+        PcsProverData<SC>: Send + Sync,
+        ShardMainData<SC>: Serialize + DeserializeOwned,
+        <SC as StarkGenericConfig>::Val: PrimeField32, */
+        // A: MachineAir<SC::Val> + for<'a> air::Air<sp1_core::stark::ProverConstraintFolder<'a, SC>>,
+        SC::Challenger: Clone,
+        OpeningProof<SC>: Send + Sync,
+        Com<SC>: Send + Sync,
+        PcsProverData<SC>: Send + Sync,
+        ShardMainData<SC>: Serialize + DeserializeOwned,
+        <SC as StarkGenericConfig>::Val: PrimeField32,
+    {
+        let machine = RiscvAir::machine(config.clone());
+        let sharding_config = ShardingConfig::default();
+        log::info!("Starting proof shard");
+        let mut res = vec![];
+        let mut checkpoint_proofs = checkpoint_shards_vec.into_iter().for_each(|checkpoint| {
+            let mut events = {
+                let mut runtime = Runtime::recover(program.clone(), checkpoint, opts);
+                let (events, _) = tracing::debug_span!("runtime.trace")
+                    .in_scope(|| runtime.execute_record().unwrap());
+                events
+            };
+
+            events.public_values = public_values;
+            let checkpoint_shards =
+                tracing::info_span!("shard").in_scope(|| machine.shard(events, &sharding_config));
+
+            let mut proofs = checkpoint_shards
+                .into_iter()
+                .map(|shard| {
+                    let config = machine.config();
+                    log::info!("Commit main");
+                    let shard_data =
+                        LocalProver::commit_main(config, &machine, &shard, shard.index() as usize);
+
+                    let chip_ordering = shard_data.chip_ordering.clone();
+                    let ordered_chips = machine
+                        .shard_chips_ordered(&chip_ordering)
+                        .collect::<Vec<_>>()
+                        .to_vec();
+
+                    log::info!("Actually prove shard");
+                    LocalProver::prove_shard(
+                        config,
+                        &pk,
+                        &ordered_chips,
+                        shard_data,
+                        &mut challenger.clone(),
+                    )
+                })
+                .collect::<Vec<_>>();
+            res.append(&mut proofs);
+        });
+        return res;
     }
 }
