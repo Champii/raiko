@@ -773,7 +773,8 @@ mod sp1_specifics {
         PcsProverData<SC>: Send + Sync,
         ShardMainData<SC>: Serialize + DeserializeOwned,
         <SC as StarkGenericConfig>::Val: PrimeField32, */ {
-        let mut challenger = bincode::deserialize(&challenger).unwrap();
+        let mut challenger: DuplexChallenger<Val, Perm, 16, 8> =
+            bincode::deserialize(&challenger).unwrap();
         let pk = bincode::deserialize(&pk).unwrap();
 
         let machine = RiscvAir::machine(config.clone());
