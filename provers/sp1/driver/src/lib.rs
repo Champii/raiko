@@ -336,15 +336,17 @@ mod sp1_specifics {
         let machine = RiscvAir::machine(config);
 
         let machine_config = machine.config();
-        let mut challenger = machine_config.challenger();
+        /* let mut challenger = machine_config.challenger();
+
+        let serialized = bincode::serialize(&challenger).unwrap();
+        let deserialized: DuplexChallenger<Val, Perm, 16, 8> =
+            bincode::deserialize(&serialized).unwrap(); */
 
         /* let serialized = serialize_duplex_challenger(&challenger);
         let deserialized = deserialize_duplex_challenger(serialized); */
 
-        let serialized = unsafe { cast_to_u8(&challenger) };
-        let deserialized = unsafe { cast_from_u8(serialized) };
-
-        unsafe { as_u8_eq(&challenger, &deserialized) };
+        /* let serialized = unsafe { cast_to_u8(&challenger) };
+        let deserialized = unsafe { cast_from_u8(serialized) }; */
 
         let (pk, vk) = machine.setup(runtime.program.as_ref());
 
@@ -386,8 +388,6 @@ mod sp1_specifics {
         let machine_config = machine.config();
         let mut challenger = machine_config.challenger();
 
-        let serialized = unsafe { cast_to_u8(&challenger) };
-
         log::info!(
             "Public value size: {}",
             bincode::serialize(&public_values).unwrap().len()
@@ -422,7 +422,7 @@ mod sp1_specifics {
             checkpoint_shards_vec.push(checkpoint_shards);
         }
 
-        let serialized_challenger = serialize_duplex_challenger(&challenger);
+        let serialized_challenger = bincode::serialize(&challenger).unwrap();
 
         println!("CHALLENGER SIZE: {}", serialized_challenger.len());
 
@@ -455,7 +455,7 @@ mod sp1_specifics {
         let mut shard_proofs = Vec::<ShardProof<BabyBearPoseidon2>>::new();
 
         let mut challenger: DuplexChallenger<Val, Perm, 16, 8> =
-            deserialize_duplex_challenger(serialized_challenger);
+            bincode::deserialize(&serialized_challenger).unwrap();
 
         let mut events = {
             let mut runtime = Runtime::recover(program.clone(), checkpoint, opts);

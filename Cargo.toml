@@ -52,21 +52,22 @@ risc0-build = { version = "0.21.0" }
 risc0-binfmt = { version = "0.21.0" }
 
 # SP1
-# sp1-sdk = { git = "https://github.com/succinctlabs/sp1.git", branch = "main" }
-# sp1-zkvm = { git = "https://github.com/succinctlabs/sp1.git", branch = "main" }
-# sp1-helper = { git = "https://github.com/succinctlabs/sp1.git", branch = "main" }
-sp1-sdk = { path = "../sp1/sdk" }
-sp1-zkvm = { path = "../sp1/zkvm" }
-sp1-helper = { path = "../sp1/helper" }
-sp1-core = { path = "../sp1/core" }
+sp1-sdk = { git = "https://github.com/succinctlabs/sp1.git", branch = "main" }
+sp1-zkvm = { git = "https://github.com/succinctlabs/sp1.git", branch = "main" }
+sp1-helper = { git = "https://github.com/succinctlabs/sp1.git", branch = "main" }
+sp1-core = { git = "https://github.com/succinctlabs/sp1.git", branch = "main" }
+# sp1-sdk = { path = "../sp1/sdk" }
+# sp1-zkvm = { path = "../sp1/zkvm" }
+# sp1-helper = { path = "../sp1/helper" }
+# sp1-core = { path = "../sp1/core" }
 
 # Plonky3
-p3-field = { git = "https://github.com/Plonky3/Plonky3.git", rev = "3b5265f9d5af36534a46caebf0617595cfb42c5a" }
-p3-challenger = { git = "https://github.com/Plonky3/Plonky3.git", rev = "3b5265f9d5af36534a46caebf0617595cfb42c5a" }
+p3-field = { git = "https://github.com/Plonky3/Plonky3.git", rev = "88ea2b866e41329817e4761429b4a5a2a9751c07" }
+p3-challenger = { git = "https://github.com/Plonky3/Plonky3.git", rev = "88ea2b866e41329817e4761429b4a5a2a9751c07" }
 # p3-challenger = { path = "../../../.cargo/git/checkouts/plonky3-2a8c63bcd5ef83b0/3b5265f/challenger" }
-p3-poseidon2 = { git = "https://github.com/Plonky3/Plonky3.git", rev = "3b5265f9d5af36534a46caebf0617595cfb42c5a" }
-p3-baby-bear = { git = "https://github.com/Plonky3/Plonky3.git", rev = "3b5265f9d5af36534a46caebf0617595cfb42c5a" }
-p3-symmetric = { git = "https://github.com/Plonky3/Plonky3.git", rev = "3b5265f9d5af36534a46caebf0617595cfb42c5a" }
+p3-poseidon2 = { git = "https://github.com/Plonky3/Plonky3.git", rev = "88ea2b866e41329817e4761429b4a5a2a9751c07" }
+p3-baby-bear = { git = "https://github.com/Plonky3/Plonky3.git", rev = "88ea2b866e41329817e4761429b4a5a2a9751c07" }
+p3-symmetric = { git = "https://github.com/Plonky3/Plonky3.git", rev = "88ea2b866e41329817e4761429b4a5a2a9751c07" }
 
 
 # alloy
@@ -188,3 +189,10 @@ rand_core = "0.6.4"
 dirs = "5.0.1"
 pathdiff = "0.2.1"
 
+
+[patch."https://github.com/Plonky3/Plonky3.git"]
+p3-field = { path = "../Plonky3/field" }
+p3-challenger = { path = "../Plonky3/challenger" }
+p3-poseidon2 = { path = "../Plonky3/poseidon2" }
+p3-baby-bear = { path = "../Plonky3/baby-bear" }
+p3-symmetric = { path = "../Plonky3/symmetric" }
