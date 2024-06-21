@@ -141,11 +141,31 @@ impl Sp1DistributedProver {
             }
         }
 
-        proofs.sort_by_key(|(checkpoint_id, _)| *checkpoint_id);
+        /* for (i, checkpoint) in checkpoints.iter().enumerate() {
+            let proof = Self::run_as_worker(
+                input.clone(),
+                &config,
+                &PartialProofRequestData {
+                    checkpoint_id: i,
+                    request: config.clone(),
+                    serialized_challenger: serialized_challenger.clone(),
+                    checkpoint_data: bincode::serialize(&checkpoint).unwrap(),
+                    public_values: public_values_serialized.clone(),
+                },
+            ).unwrap();
+            proofs.push()
+        } */
+
+        proofs.sort_by(|(checkpoint_id_a, _), (checkpoint_id_b, _)| {
+            checkpoint_id_a.cmp(checkpoint_id_b)
+        });
 
         let proofs = proofs
             .into_iter()
-            .map(|(_, proof)| proof)
+            .map(|(i, proof)| {
+                println!("PROOF I {}", i);
+                proof
+            })
             .flatten()
             .collect();
 
