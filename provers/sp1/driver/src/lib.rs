@@ -352,6 +352,7 @@ mod sp1_specifics {
         let mut checkpoints = Vec::new();
         let mut challenger = machine_config.challenger();
         vk.observe_into(&mut challenger);
+        let mut records = Vec::new();
         let (public_values_stream, public_values) = loop {
             let state = runtime.state.clone();
 
@@ -361,21 +362,10 @@ mod sp1_specifics {
                 .execute_record()
                 .map_err(SP1CoreProverError::ExecutionError)?;
 
+            println!("Checkpoint: {:?}", record.public_values);
+
             checkpoints.push(state);
-
-            /* let checkpoint_shards =
-            tracing::info_span!("shard").in_scope(|| machine.shard(record, &sharding_config)); */
-            let checkpoint_shards = vec![record];
-
-            // Commit to each shard.
-            let (commitments, commit_data) = tracing::info_span!("commit")
-                .in_scope(|| LocalProver::commit_shards(&machine, &checkpoint_shards, opts));
-
-            // Observe the commitments.
-            for (commitment, shard) in commitments.into_iter().zip(checkpoint_shards.iter()) {
-                challenger.observe(commitment);
-                challenger.observe_slice(&shard.public_values::<Val>()[0..machine.num_pv_elts()]);
-            }
+            records.push(record);
 
             // If we've reached the final checkpoint, break out of the loop.
             if done {
@@ -386,14 +376,27 @@ mod sp1_specifics {
             }
         };
 
+        for mut record in records {
+            record.public_values = public_values;
+            let checkpoint_shards =
+                tracing::info_span!("shard").in_scope(|| machine.shard(record, &sharding_config));
+
+            // Commit to each shard.
+            let (commitments, commit_data) = tracing::info_span!("commit")
+                .in_scope(|| LocalProver::commit_shards(&machine, &checkpoint_shards, opts));
+
+            // Observe the commitments.
+            for (commitment, shard) in commitments.into_iter().zip(checkpoint_shards.iter()) {
+                challenger.observe(commitment);
+                challenger.observe_slice(&shard.public_values::<Val>()[0..machine.num_pv_elts()]);
+            }
+        }
+
         let serialized_challenger = bincode::serialize(&challenger).unwrap();
         let deserialized_challenger: <BabyBearPoseidon2 as StarkGenericConfig>::Challenger =
             bincode::deserialize(&serialized_challenger).unwrap();
 
-        /* assert_eq!(
-            format!("{:?}", challenger),
-            format!("{:?}", deserialized_challenger)
-        ); */
+        // assert_eq!(format!("{:?}", challenger), format!("{:?}", deserialized_challenger)
 
         println!("CHALLENGER SIZE: {}", serialized_challenger.len());
 
@@ -435,11 +438,10 @@ mod sp1_specifics {
             events
         };
 
-        // events.public_values = public_values;
+        events.public_values = public_values;
 
         let sharding_config = ShardingConfig::default();
-        // let checkpoint = machine.shard(events, &sharding_config);
-        let checkpoint = vec![events];
+        let checkpoint = machine.shard(events, &sharding_config);
 
         log::info!("Starting proof shard");
         let mut checkpoint_proofs = checkpoint
