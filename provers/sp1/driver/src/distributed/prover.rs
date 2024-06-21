@@ -8,7 +8,10 @@ use raiko_lib::{
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use sp1_core::{runtime::Program, utils::SP1CoreOpts};
+use sp1_core::{
+    runtime::{ExecutionState, Program},
+    utils::SP1CoreOpts,
+};
 use sp1_sdk::{CoreSC, ProverClient, SP1Stdin};
 
 use crate::{
@@ -93,7 +96,13 @@ impl Sp1DistributedProver {
                );
         */
 
-        let (proofs, public_values_stream) = prove_partial_old(
+        let (
+            checkpoints,
+            serialized_challenger,
+            serialized_pk,
+            public_values_stream,
+            public_values,
+        ) = prove_partial_old(
             program.clone(),
             &stdin,
             proving_config.clone(),
@@ -101,7 +110,7 @@ impl Sp1DistributedProver {
         )
         .unwrap();
 
-        /* let mut config = config.clone();
+        let mut config = config.clone();
 
         // Fixing the network and proof type to be forwarded to the workers
         let mut_config = config.as_object_mut().unwrap();
@@ -142,7 +151,7 @@ impl Sp1DistributedProver {
 
         // Send the checkpoints to the workers
         // for i in 0..nb_checkpoint {
-        for (i, checkpoint) in checkpoints.iter_mut().enumerate() {
+        for (i, checkpoint) in checkpoints.iter().enumerate() {
             log::info!("Serializing checkpoint {}", i);
             // let serialized_checkpoint = bincode::serialize(checkpoint).unwrap();
             /* let mut serialized_checkpoint = Vec::new();
@@ -209,7 +218,7 @@ impl Sp1DistributedProver {
                 proof
             })
             .flatten()
-            .collect(); */
+            .collect();
 
         let proof = sp1_sdk::SP1ProofWithPublicValues {
             proof: proofs,
@@ -288,9 +297,20 @@ impl Sp1DistributedProver {
         let mut opts = SP1CoreOpts::default();
         opts.shard_batch_size = 1;
 
-        let checkpoint_data = bincode::deserialize(&data.checkpoint_data).unwrap();
+        let checkpoint_data: ExecutionState = bincode::deserialize(&data.checkpoint_data).unwrap();
+        let partial_proof = short_circuit_proof(
+            program.clone(),
+            // &stdin,
+            config,
+            opts.clone(),
+            checkpoint_data.clone(),
+            data.serialized_challenger.clone(),
+            // serialized_pk.clone(),
+            data.serialized_pk.clone(),
+            bincode::deserialize(&data.public_values).unwrap(),
+        );
 
-        let partial_proof = prove_partial(
+        /* let partial_proof = prove_partial(
             program,
             // &stdin,
             config,
@@ -301,7 +321,7 @@ impl Sp1DistributedProver {
             data.checkpoint_id,
             bincode::deserialize(&data.public_values).unwrap(),
         )
-        .expect("Sp1: proving failed");
+        .expect("Sp1: proving failed"); */
 
         to_proof(Ok(Sp1Response {
             proof: serde_json::to_string(&partial_proof).unwrap(),

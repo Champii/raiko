@@ -576,7 +576,16 @@ mod sp1_specifics {
         config: BabyBearPoseidon2,
         opts: SP1CoreOpts,
         // checkpoint_id: usize,
-    ) -> Result<(Vec<ShardProof<BabyBearPoseidon2>>, SP1PublicValues), SP1CoreProverError>
+    ) -> Result<
+        (
+            Vec<ExecutionState>,
+            Vec<u8>,
+            Vec<u8>,
+            SP1PublicValues,
+            PublicValues<u32, u32>,
+        ),
+        SP1CoreProverError,
+    >
 /* where
         SC::Challenger: Clone,
         OpeningProof<SC>: Send + Sync,
@@ -719,45 +728,51 @@ mod sp1_specifics {
 
         shard_proofs.append(&mut checkpoint_proofs); */
 
-        let mut proofs = Vec::new();
+        // let mut proofs = Vec::new();
 
         let challenger_serialized = bincode::serialize(&challenger).unwrap();
         let pk_serialized = bincode::serialize(&pk).unwrap();
 
-        for checkpoint in checkpoints_states {
-            let mut shard_proofs = short_circuit_proof(
-                program.clone(),
-                stdin,
-                config.clone(),
-                opts,
-                checkpoint,
-                challenger_serialized.clone(),
-                pk_serialized.clone(),
-                public_values,
-                // &machine,
-            );
+        /* for checkpoint in checkpoints_states {
+                   let mut shard_proofs = short_circuit_proof(
+                       program.clone(),
+                       stdin,
+                       config.clone(),
+                       opts,
+                       checkpoint,
+                       challenger_serialized.clone(),
+                       pk_serialized.clone(),
+                       public_values,
+                       // &machine,
+                   );
 
-            proofs.append(&mut shard_proofs);
-        }
-
+                   proofs.append(&mut shard_proofs);
+               }
+        */
         // let proof = MachineProof::<SC> { shard_proofs };
 
         // Print the summary.
-        let proving_time = proving_start.elapsed().as_secs_f64();
+        /* let proving_time = proving_start.elapsed().as_secs_f64();
         tracing::info!(
             "summary: cycles={}, e2e={}, khz={:.2}, proofSize={}",
             runtime.state.global_clk,
             proving_time,
             (runtime.state.global_clk as f64 / proving_time as f64),
             bincode::serialize(&proofs).unwrap().len(),
-        );
+        ); */
 
-        Ok((proofs, SP1PublicValues::from(&public_values_stream)))
+        Ok((
+            checkpoints_states,
+            challenger_serialized,
+            pk_serialized,
+            SP1PublicValues::from(&public_values_stream),
+            public_values,
+        ))
     }
 
     pub fn short_circuit_proof(
         program: Program,
-        stdin: &SP1Stdin,
+        // stdin: &SP1Stdin,
         config: BabyBearPoseidon2,
         opts: SP1CoreOpts,
         checkpoint: ExecutionState,
