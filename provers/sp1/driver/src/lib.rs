@@ -48,11 +48,11 @@ mod sp1_specifics {
     use serde::ser::SerializeTuple;
     use serde::Serializer;
     use serde::{de::DeserializeOwned, Deserialize, Serialize};
-    use serde_remote::as_u8_eq;
+    /* use serde_remote::as_u8_eq;
     use serde_remote::cast_from_u8;
     use serde_remote::cast_to_u8;
     use serde_remote::deserialize_duplex_challenger;
-    use serde_remote::serialize_duplex_challenger;
+    use serde_remote::serialize_duplex_challenger; */
     use sp1_core::air::PublicValues;
     use sp1_core::runtime::ExecutionRecord;
     use sp1_core::runtime::ExecutionState;
@@ -67,11 +67,12 @@ mod sp1_specifics {
         },
         utils::{SP1CoreOpts, SP1CoreProverError},
     };
+    use sp1_sdk::CoreSC;
     use sp1_sdk::{SP1PublicValues, SP1Stdin};
 
     use crate::ELF;
 
-    mod serde_remote {
+    /* mod serde_remote {
         use std::io::Read;
 
         use super::{Perm, Val};
@@ -256,9 +257,9 @@ mod sp1_specifics {
             // ptr.cast::<T>().as_ref().unwrap().clone()
             std::ptr::read_unaligned(bytes.as_ptr().cast())
         }
-    }
+    } */
 
-    fn trace_checkpoint(program: Program, file: &File, opts: SP1CoreOpts) -> ExecutionRecord {
+    /* fn trace_checkpoint(program: Program, file: &File, opts: SP1CoreOpts) -> ExecutionRecord {
         let mut reader = std::io::BufReader::new(file);
         let state = bincode::deserialize_from(&mut reader).expect("failed to deserialize state");
         let mut runtime = Runtime::recover(program.clone(), state, opts);
@@ -270,9 +271,9 @@ mod sp1_specifics {
     fn reset_seek(file: &mut File) {
         file.seek(std::io::SeekFrom::Start(0))
             .expect("failed to seek to start of tempfile");
-    }
+    } */
 
-    pub fn nb_checkpoints(
+    /* pub fn nb_checkpoints(
         elf: &[u8],
         stdin: &SP1Stdin,
         nb_workers: usize,
@@ -314,7 +315,7 @@ mod sp1_specifics {
             opts,
             SP1PublicValues::from(&runtime.state.public_values_stream),
         ))
-    }
+    } */
 
     pub fn compute_trace_and_challenger(
         program: Program,
@@ -362,8 +363,9 @@ mod sp1_specifics {
 
             checkpoints.push(state);
 
-            let checkpoint_shards =
-                tracing::info_span!("shard").in_scope(|| machine.shard(record, &sharding_config));
+            /* let checkpoint_shards =
+            tracing::info_span!("shard").in_scope(|| machine.shard(record, &sharding_config)); */
+            let checkpoint_shards = vec![record];
 
             // Commit to each shard.
             let (commitments, commit_data) = tracing::info_span!("commit")
@@ -385,6 +387,13 @@ mod sp1_specifics {
         };
 
         let serialized_challenger = bincode::serialize(&challenger).unwrap();
+        let deserialized_challenger: <BabyBearPoseidon2 as StarkGenericConfig>::Challenger =
+            bincode::deserialize(&serialized_challenger).unwrap();
+
+        assert_eq!(
+            format!("{:?}", challenger),
+            format!("{:?}", deserialized_challenger)
+        );
 
         println!("CHALLENGER SIZE: {}", serialized_challenger.len());
 
@@ -416,7 +425,7 @@ mod sp1_specifics {
         // For each checkpoint, generate events and shard again, then prove the shards.
         let mut shard_proofs = Vec::<ShardProof<BabyBearPoseidon2>>::new();
 
-        let mut challenger: DuplexChallenger<Val, Perm, 16, 8> =
+        let mut challenger: <BabyBearPoseidon2 as StarkGenericConfig>::Challenger =
             bincode::deserialize(&serialized_challenger).unwrap();
 
         let mut events = {
@@ -426,10 +435,11 @@ mod sp1_specifics {
             events
         };
 
-        events.public_values = public_values;
+        // events.public_values = public_values;
 
         let sharding_config = ShardingConfig::default();
-        let checkpoint = machine.shard(events, &sharding_config);
+        // let checkpoint = machine.shard(events, &sharding_config);
+        let checkpoint = vec![events];
 
         log::info!("Starting proof shard");
         let mut checkpoint_proofs = checkpoint

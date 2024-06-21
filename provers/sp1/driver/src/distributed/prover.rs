@@ -12,7 +12,7 @@ use sp1_core::{runtime::Program, utils::SP1CoreOpts};
 use sp1_sdk::{CoreSC, ProverClient, SP1Stdin};
 
 use crate::{
-    sp1_specifics::{compute_trace_and_challenger, nb_checkpoints, prove_partial},
+    sp1_specifics::{compute_trace_and_challenger, prove_partial},
     Sp1Response, ELF,
 };
 
