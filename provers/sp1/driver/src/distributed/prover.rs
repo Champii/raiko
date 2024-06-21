@@ -141,7 +141,7 @@ impl Sp1DistributedProver {
                 queue_tx.clone(),
                 public_values_serialized.clone(),
                 serialized_challenger.clone(),
-                serialized_pk.clone(),
+                // serialized_pk.clone(),
             );
 
             tokio::spawn(async move {
@@ -306,7 +306,7 @@ impl Sp1DistributedProver {
             checkpoint_data.clone(),
             data.serialized_challenger.clone(),
             // serialized_pk.clone(),
-            data.serialized_pk.clone(),
+            // data.serialized_pk.clone(),
             bincode::deserialize(&data.public_values).unwrap(),
         );
 

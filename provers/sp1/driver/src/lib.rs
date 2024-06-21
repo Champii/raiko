@@ -777,7 +777,7 @@ mod sp1_specifics {
         opts: SP1CoreOpts,
         checkpoint: ExecutionState,
         mut challenger: Vec<u8>,
-        pk: Vec<u8>,
+        // pk: Vec<u8>,
         public_values: sp1_core::air::PublicValues<u32, u32>,
         // machine: &StarkMachine<SC, A>,
     ) -> Vec<ShardProof<BabyBearPoseidon2>>
@@ -790,9 +790,10 @@ mod sp1_specifics {
         <SC as StarkGenericConfig>::Val: PrimeField32, */ {
         let mut challenger: DuplexChallenger<Val, Perm, 16, 8> =
             bincode::deserialize(&challenger).unwrap();
-        let pk = bincode::deserialize(&pk).unwrap();
+        // let pk = bincode::deserialize(&pk).unwrap();
 
         let machine = RiscvAir::machine(config.clone());
+        let (pk, vk) = machine.setup(&program);
         let sharding_config = ShardingConfig::default();
         log::info!("Starting proof shard");
         let mut res = vec![];
