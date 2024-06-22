@@ -3,7 +3,7 @@ use std::{fs::File, path::PathBuf};
 use axum::{
     body::Bytes,
     debug_handler,
-    extract::{Multipart, State},
+    extract::{DefaultBodyLimit, Multipart, State},
     routing::post,
     Json, Router,
 };
