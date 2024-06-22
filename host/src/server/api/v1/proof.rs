@@ -1,6 +1,12 @@
 use std::{fs::File, path::PathBuf};
 
-use axum::{debug_handler, extract::State, routing::post, Json, Router};
+use axum::{
+    body::Bytes,
+    debug_handler,
+    extract::{Multipart, State},
+    routing::post,
+    Json, Router,
+};
 use raiko_core::{
     interfaces::{ProofRequest, RaikoError},
     provider::{rpc::RpcBlockDataProvider, BlockDataProvider},
@@ -9,7 +15,7 @@ use raiko_core::{
 use raiko_lib::{
     input::{get_input_path, GuestInput},
     utils::{to_header, HeaderHasher},
-    Measurement,
+    Measurement, PartialProofRequestData,
 };
 use serde_json::Value;
 use tracing::{debug, info};
@@ -91,6 +97,45 @@ async fn validate_cache_input(
             "Cached input is not enabled".to_owned(),
         ))
     }
+}
+
+async fn handle_partial_proof(
+    ProverState {
+        opts: _,
+        chain_specs: _,
+    }: ProverState,
+    mut multipart: Multipart,
+) -> HostResult<ProofResponse> {
+    let mut data = Bytes::new();
+    while let Some(field) = multipart.next_field().await.unwrap() {
+        if let Some("FileData") = field.name() {
+            data = field.bytes().await.unwrap();
+
+            break;
+        }
+    }
+
+    let partial_proof_request_data: PartialProofRequestData = bincode::deserialize(data.as_ref())
+        .map_err(|e| {
+        inc_host_error(0);
+        HostError::Anyhow(e.into())
+    })?;
+
+    // Execute the proof generation.
+    let total_time = Measurement::start("", false);
+
+    let proof = sp1_driver::Sp1DistributedProver::run_as_worker(&partial_proof_request_data)
+        .await
+        .map_err(|e| {
+            let total_time = total_time.stop_with("====> Proof generation failed");
+            observe_total_time(0, total_time, false);
+            inc_host_error(0);
+            e
+        })?;
+
+    total_time.stop_with("====> Complete proof generated");
+
+    ProofResponse::try_from(proof)
 }
 
 async fn handle_proof(
@@ -226,6 +271,19 @@ async fn proof_handler(
     })
 }
 
+async fn partial_proof_handler(
+    State(prover_state): State<ProverState>,
+    multipart: Multipart,
+) -> HostResult<ProofResponse> {
+    inc_current_req();
+    handle_partial_proof(prover_state, multipart)
+        .await
+        .map_err(|e| {
+            dec_current_req();
+            e
+        })
+}
+
 #[derive(OpenApi)]
 #[openapi(paths(proof_handler))]
 struct Docs;
@@ -235,7 +293,9 @@ pub fn create_docs() -> utoipa::openapi::OpenApi {
 }
 
 pub fn create_router() -> Router<ProverState> {
-    Router::new().route("/", post(proof_handler))
+    Router::new()
+        .route("/", post(proof_handler))
+        .route("/partial", post(partial_proof_handler))
 }
 
 #[cfg(test)]
