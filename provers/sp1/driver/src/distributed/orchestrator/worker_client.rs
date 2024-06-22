@@ -4,7 +4,7 @@ use serde_json::Value;
 
 use crate::Sp1Response;
 
-pub struct Worker {
+pub struct WorkerClient {
     /// The id of the worker
     id: usize,
     /// The url of the worker
@@ -18,7 +18,7 @@ pub struct Worker {
     shard_batch_size: usize,
 }
 
-impl Worker {
+impl WorkerClient {
     pub fn new(
         id: usize,
         url: String,
@@ -28,7 +28,7 @@ impl Worker {
         serialized_challenger: Vec<u8>,
         shard_batch_size: usize,
     ) -> Self {
-        Worker {
+        WorkerClient {
             id,
             url,
             queue,
@@ -53,12 +53,7 @@ impl Worker {
     }
 
     async fn send_work(&self, i: usize, checkpoint: Vec<u8>) -> Result<String, reqwest::Error> {
-        log::info!(
-            "Sending checkpoint to worker {}: {}",
-            // checkpoint,
-            self.id,
-            self.url
-        );
+        log::info!("Sending checkpoint to worker {}: {}", self.id, self.url);
 
         let req = PartialProofRequestData {
             checkpoint_id: i,
@@ -90,7 +85,6 @@ impl Worker {
 
                 log::info!(
                     "Received proof for checkpoint  from worker {}: {} in {}s",
-                    // checkpoint,
                     self.id,
                     self.url,
                     now.elapsed().as_secs()

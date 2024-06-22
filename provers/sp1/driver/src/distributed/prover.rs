@@ -1,6 +1,5 @@
 use std::env;
 
-use super::worker::Worker;
 use raiko_lib::{
     input::{GuestInput, GuestOutput},
     prover::{to_proof, Proof, Prover, ProverConfig, ProverResult},
@@ -36,7 +35,7 @@ impl Sp1DistributedProver {
     pub async fn run_as_orchestrator(
         input: GuestInput,
         _output: &GuestOutput,
-        config: &ProverConfig,
+        _config: &ProverConfig,
     ) -> ProverResult<Proof> {
         let now = std::time::Instant::now();
 
@@ -69,81 +68,16 @@ impl Sp1DistributedProver {
             )
             .unwrap();
 
-        let mut config = config.clone();
-
-        // Fixing the network and proof type to be forwarded to the workers
-        let mut_config = config.as_object_mut().unwrap();
-        mut_config.insert("network".to_string(), "taiko_a7".into());
-        mut_config.insert("proof_type".to_string(), "sp1_distributed".into());
-        mut_config.insert(
-            "sp1".to_string(),
-            serde_json::json!({
-                "shard_batch_size": opts.shard_batch_size,
-            }),
-        );
-
         log::info!("Number of checkpoints: {}", checkpoints.len());
 
-        let (queue_tx, queue_rx) = async_channel::unbounded();
-        let (answer_tx, answer_rx) = async_channel::unbounded();
-
-        // Spawn the workers
-        for (i, url) in ip_list.iter().enumerate() {
-            let worker = Worker::new(
-                i,
-                "http://".to_string() + url + "/proof/partial".into(),
-                queue_rx.clone(),
-                answer_tx.clone(),
-                bincode::serialize(&public_values).unwrap(),
-                bincode::serialize(&challenger).unwrap(),
-                shard_batch_size,
-            );
-
-            tokio::spawn(async move {
-                worker.run().await;
-            });
-        }
-
-        /* let checkpoints_chunks = checkpoints
-        .chunks((checkpoints.len() as f64 / ip_list.len() as f64).ceil() as usize)
-        .collect::<Vec<_>>(); */
-
-        // Send the checkpoints to the workers
-        for (i, checkpoint) in checkpoints.iter().enumerate() {
-            queue_tx
-                .send((i, bincode::serialize(&checkpoint).unwrap()))
-                .await
-                .unwrap();
-        }
-
-        let mut proofs = Vec::new();
-
-        // Get the partial proofs from the workers
-        loop {
-            let (checkpoint_id, partial_proof_json) = answer_rx.recv().await.unwrap();
-
-            let partial_proof =
-                serde_json::from_str::<Vec<_>>(partial_proof_json.as_str()).unwrap();
-
-            proofs.push((checkpoint_id as usize, partial_proof));
-
-            if proofs.len() == checkpoints.len() {
-                break;
-            }
-        }
-
-        proofs.sort_by(|(checkpoint_id_a, _), (checkpoint_id_b, _)| {
-            checkpoint_id_a.cmp(checkpoint_id_b)
-        });
-
-        let proofs = proofs
-            .into_iter()
-            .map(|(i, proof)| {
-                println!("PROOF I {}", i);
-                proof
-            })
-            .flatten()
-            .collect();
+        let proofs = super::orchestrator::distribute_work(
+            ip_list,
+            checkpoints,
+            public_values,
+            challenger,
+            shard_batch_size,
+        )
+        .await;
 
         let proof = sp1_sdk::SP1ProofWithPublicValues {
             proof: proofs,
