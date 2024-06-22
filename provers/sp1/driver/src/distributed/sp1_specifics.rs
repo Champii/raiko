@@ -14,7 +14,12 @@ use sp1_core::{
         BabyBearPoseidon2, SP1CoreOpts, SP1CoreProverError,
     },
 };
+use sp1_sdk::CoreSC;
 use sp1_sdk::{SP1PublicValues, SP1Stdin};
+
+use crate::ELF;
+
+use super::partial_proof_request::PartialProofRequestData;
 
 fn trace_checkpoint(program: Program, file: &File, opts: SP1CoreOpts) -> ExecutionRecord {
     let mut reader = std::io::BufReader::new(file);
@@ -192,14 +197,15 @@ pub fn prove_partial_old(
 }
 
 pub fn short_circuit_proof(
-    program: Program,
-    config: BabyBearPoseidon2,
-    opts: SP1CoreOpts,
-    checkpoint: ExecutionState,
-    challenger: DuplexChallenger<Val, Perm, 16, 8>,
-    public_values: sp1_core::air::PublicValues<u32, u32>,
+    request_data: &PartialProofRequestData,
 ) -> Vec<ShardProof<BabyBearPoseidon2>> {
     let now = Instant::now();
+
+    let program = Program::from(ELF);
+    let config = CoreSC::default();
+
+    let mut opts = SP1CoreOpts::default();
+    opts.shard_batch_size = request_data.shard_batch_size;
 
     let machine = RiscvAir::machine(config.clone());
     let (pk, _vk) = machine.setup(&program);
@@ -215,7 +221,8 @@ pub fn short_circuit_proof(
     let proving_time = Instant::now();
 
     let mut events = {
-        let mut runtime = Runtime::recover(program.clone(), checkpoint, opts);
+        let mut runtime =
+            Runtime::recover(program.clone(), request_data.checkpoint_data.clone(), opts);
         let (events, _) =
             tracing::debug_span!("runtime.trace").in_scope(|| runtime.execute_record().unwrap());
         events
@@ -225,7 +232,7 @@ pub fn short_circuit_proof(
 
     let now = Instant::now();
 
-    events.public_values = public_values;
+    events.public_values = request_data.public_values;
     let checkpoint_shards =
         tracing::info_span!("shard").in_scope(|| machine.shard(events, &sharding_config));
 
@@ -261,7 +268,7 @@ pub fn short_circuit_proof(
                 &pk,
                 &ordered_chips,
                 shard_data,
-                &mut challenger.clone(),
+                &mut request_data.challenger.clone(),
             );
 
             log::debug!("Prove shard took {:?}", now.elapsed());

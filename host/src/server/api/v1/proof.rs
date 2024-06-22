@@ -15,7 +15,7 @@ use raiko_core::{
 use raiko_lib::{
     input::{get_input_path, GuestInput},
     utils::{to_header, HeaderHasher},
-    Measurement, PartialProofRequestData,
+    Measurement,
 };
 use serde_json::Value;
 use tracing::{debug, info};
@@ -115,16 +115,10 @@ async fn handle_partial_proof(
         }
     }
 
-    let partial_proof_request_data: PartialProofRequestData = bincode::deserialize(data.as_ref())
-        .map_err(|e| {
-        inc_host_error(0);
-        HostError::Anyhow(e.into())
-    })?;
-
     // Execute the proof generation.
     let total_time = Measurement::start("", false);
 
-    let proof = sp1_driver::Sp1DistributedProver::run_as_worker(&partial_proof_request_data)
+    let proof = sp1_driver::Sp1DistributedProver::run_as_worker(data.as_ref())
         .await
         .map_err(|e| {
             let total_time = total_time.stop_with("====> Proof generation failed");

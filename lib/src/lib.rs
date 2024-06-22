@@ -28,7 +28,6 @@ mod no_std {
     };
 }
 
-use serde::{Deserialize, Serialize};
 use tracing::debug;
 
 pub mod builder;
@@ -39,15 +38,6 @@ pub mod primitives;
 pub mod protocol_instance;
 pub mod prover;
 pub mod utils;
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PartialProofRequestData {
-    pub checkpoint_id: usize,
-    pub checkpoint_data: Vec<u8>,
-    pub serialized_challenger: Vec<u8>,
-    pub public_values: Vec<u8>,
-    pub shard_batch_size: usize,
-}
 
 #[cfg(not(target_os = "zkvm"))]
 mod time {

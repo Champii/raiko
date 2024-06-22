@@ -3,13 +3,18 @@ use std::env;
 use raiko_lib::{
     input::{GuestInput, GuestOutput},
     prover::{to_proof, Proof, Prover, ProverConfig, ProverResult},
-    PartialProofRequestData,
 };
-use sp1_core::{runtime::Program, utils::SP1CoreOpts};
+use sp1_core::{
+    runtime::{ExecutionState, Program},
+    utils::SP1CoreOpts,
+};
 use sp1_sdk::{CoreSC, ProverClient, SP1Stdin};
 
 use crate::{
-    distributed::sp1_specifics::{prove_partial_old, short_circuit_proof},
+    distributed::{
+        partial_proof_request::PartialProofRequestData,
+        sp1_specifics::{prove_partial_old, short_circuit_proof},
+    },
     Sp1Response, ELF,
 };
 
@@ -22,10 +27,6 @@ impl Prover for Sp1DistributedProver {
         config: &ProverConfig,
     ) -> ProverResult<Proof> {
         println!("Running SP1 Distributed prover");
-
-        /* if config.get("sp1").map(|sp1| sp1.get("checkpoint")).is_some() {
-            return Self::run_as_worker(input, output, &config).await;
-        } */
 
         return Self::run_as_orchestrator(input, output, &config).await;
     }
@@ -45,8 +46,11 @@ impl Sp1DistributedProver {
         let mut stdin = SP1Stdin::new();
         stdin.write(&input);
 
-        let ip_list = std::fs::read_to_string("distributed.json").unwrap();
-        let ip_list: Vec<String> = serde_json::from_str(&ip_list).unwrap();
+        let ip_list = std::fs::read_to_string("distributed.json")
+            .expect("Sp1 Distributed: Need a `distributed.json` file with a list of IP addresses");
+        let ip_list: Vec<String> = serde_json::from_str(&ip_list).expect(
+            "Sp1 Distributed: Invalid JSON for `distributed.json`. need an array of IP addresses",
+        );
 
         // Generate the proof for the given program.
         let client = ProverClient::new();
@@ -68,22 +72,23 @@ impl Sp1DistributedProver {
             )
             .unwrap();
 
+        let partial_proof_request = PartialProofRequestData {
+            checkpoint_id: 0,
+            checkpoint_data: ExecutionState::default(),
+            challenger,
+            public_values: public_values.clone(),
+            shard_batch_size,
+        };
+
         log::info!("Number of checkpoints: {}", checkpoints.len());
 
-        let proofs = super::orchestrator::distribute_work(
-            ip_list,
-            checkpoints,
-            public_values,
-            challenger,
-            shard_batch_size,
-        )
-        .await;
+        let proofs =
+            super::orchestrator::distribute_work(ip_list, checkpoints, partial_proof_request).await;
 
         let proof = sp1_sdk::SP1ProofWithPublicValues {
             proof: proofs,
             stdin: stdin.clone(),
             public_values: public_values_stream,
-            // sp1_version: sp1_core::SP1_CIRCUIT_VERSION.to_string(),
         };
 
         // Verify proof.
@@ -113,20 +118,15 @@ impl Sp1DistributedProver {
         }))
     }
 
-    pub async fn run_as_worker(data: &PartialProofRequestData) -> ProverResult<Proof> {
-        println!("Running SP1 Distributed worker {}", data.checkpoint_id);
-        let config = CoreSC::default();
-        let mut opts = SP1CoreOpts::default();
-        opts.shard_batch_size = data.shard_batch_size;
+    pub async fn run_as_worker(data: &[u8]) -> ProverResult<Proof> {
+        let partial_proof_request: PartialProofRequestData = bincode::deserialize(data).unwrap();
 
-        let partial_proof = short_circuit_proof(
-            Program::from(ELF),
-            config,
-            opts.clone(),
-            bincode::deserialize(&data.checkpoint_data).unwrap(),
-            bincode::deserialize(&data.serialized_challenger).unwrap(),
-            bincode::deserialize(&data.public_values).unwrap(),
+        println!(
+            "Running SP1 Distributed worker {}",
+            partial_proof_request.checkpoint_id
         );
+
+        let partial_proof = short_circuit_proof(&partial_proof_request);
 
         to_proof(Ok(Sp1Response {
             proof: serde_json::to_string(&partial_proof).unwrap(),
