@@ -296,6 +296,7 @@ pub fn create_router() -> Router<ProverState> {
     Router::new()
         .route("/", post(proof_handler))
         .route("/partial", post(partial_proof_handler))
+        .layer(DefaultBodyLimit::disable())
 }
 
 #[cfg(test)]
