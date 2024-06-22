@@ -639,7 +639,10 @@ mod sp1_specifics {
                 .map_err(SP1CoreProverError::IoError)?;
             checkpoints_files.push(tempfile);
 
-            log::debug!("Checkpoint serialization took {:?}", checkpoint_serialize);
+            log::debug!(
+                "Checkpoint serialization took {:?}",
+                checkpoint_serialize.elapsed()
+            );
 
             // If we've reached the final checkpoint, break out of the loop.
             if done {
@@ -672,7 +675,10 @@ mod sp1_specifics {
             record.public_values = public_values;
             reset_seek(&mut *checkpoint_file);
 
-            log::debug!("Checkpoint trace took {:?}", trace_checkpoint_time);
+            log::debug!(
+                "Checkpoint trace took {:?}",
+                trace_checkpoint_time.elapsed()
+            );
 
             let sharding_time = Instant::now();
 
@@ -680,7 +686,7 @@ mod sp1_specifics {
             let checkpoint_shards =
                 tracing::info_span!("shard").in_scope(|| machine.shard(record, &sharding_config));
 
-            log::debug!("Checkpoint sharding took {:?}", sharding_time);
+            log::debug!("Checkpoint sharding took {:?}", sharding_time.elapsed());
 
             let commit_time = Instant::now();
 
@@ -688,7 +694,7 @@ mod sp1_specifics {
             let (commitments, commit_data) = tracing::info_span!("commit")
                 .in_scope(|| LocalProver::commit_shards(&machine, &checkpoint_shards, opts));
 
-            log::debug!("Checkpoint commit took {:?}", commit_time);
+            log::debug!("Checkpoint commit took {:?}", commit_time.elapsed());
 
             let observe_time = Instant::now();
 
@@ -698,7 +704,7 @@ mod sp1_specifics {
                 challenger.observe_slice(&shard.public_values::<Val>()[0..machine.num_pv_elts()]);
             }
 
-            log::debug!("Checkpoint observe took {:?}", observe_time);
+            log::debug!("Checkpoint observe took {:?}", observe_time.elapsed());
         }
 
         log::debug!("Checkpoints commitment took {:?}", now.elapsed());

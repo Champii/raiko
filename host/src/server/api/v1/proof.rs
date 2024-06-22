@@ -131,106 +131,23 @@ async fn handle_partial_proof(
 
     log::info!("After deserialize");
 
-    // Override the existing proof request config from the config file and command line
-    // options with the request from the client.
-    let mut config = opts.proof_request_opt.clone();
-    let request: Value = serde_json::from_str(&partial_proof_request_data.request)
-        .map_err(|e| HostError::Anyhow(e.into()))?;
-    config.merge(&request)?;
-
-    // Construct the actual proof request from the available configs.
-    let proof_request = ProofRequest::try_from(config)?;
-    inc_host_req_count(proof_request.block_number);
-    inc_guest_req_count(&proof_request.proof_type, proof_request.block_number);
-
-    info!(
-        "# Generating proof for block {} on {}",
-        proof_request.block_number, proof_request.network
-    );
-
-    // Check for a cached input for the given request config.
-    let cached_input = get_cached_input(
-        &opts.cache_path,
-        proof_request.block_number,
-        &proof_request.network.to_string(),
-    );
-
-    let l1_chain_spec = support_chain_specs
-        .get_chain_spec(&proof_request.l1_network.to_string())
-        .ok_or_else(|| HostError::InvalidRequestConfig("Unsupported l1 network".to_string()))?;
-
-    let taiko_chain_spec = support_chain_specs
-        .get_chain_spec(&proof_request.network.to_string())
-        .ok_or_else(|| HostError::InvalidRequestConfig("Unsupported raiko network".to_string()))?;
-
     // Execute the proof generation.
     let total_time = Measurement::start("", false);
 
-    let raiko = Raiko::new(
-        l1_chain_spec.clone(),
-        taiko_chain_spec.clone(),
-        proof_request.clone(),
-    );
-    let provider = RpcBlockDataProvider::new(
-        &taiko_chain_spec.rpc.clone(),
-        proof_request.block_number - 1,
-    )?;
-    let input = match validate_cache_input(cached_input, &provider).await {
-        Ok(cache_input) => cache_input,
-        Err(_) => {
-            // no valid cache
-            memory::reset_stats();
-            let measurement = Measurement::start("Generating input...", false);
-            let input = raiko.generate_input(provider).await?;
-            let input_time = measurement.stop_with("=> Input generated");
-            observe_prepare_input_time(proof_request.block_number, input_time, true);
-            memory::print_stats("Input generation peak memory used: ");
-            input
-        }
-    };
-    memory::reset_stats();
-    let output = raiko.get_output(&input)?;
-    memory::print_stats("Guest program peak memory used: ");
-
-    memory::reset_stats();
     let measurement = Measurement::start("Generating proof...", false);
-    let proof = raiko
-        .prove_partial(input.clone(), partial_proof_request_data)
+
+    let proof = sp1_driver::Sp1DistributedProver::run_as_worker(&partial_proof_request_data)
         .await
         .map_err(|e| {
             let total_time = total_time.stop_with("====> Proof generation failed");
-            observe_total_time(proof_request.block_number, total_time, false);
-            match e {
-                RaikoError::Guest(e) => {
-                    inc_guest_error(&proof_request.proof_type, proof_request.block_number);
-                    HostError::Core(e.into())
-                }
-                e => {
-                    inc_host_error(proof_request.block_number);
-                    e.into()
-                }
-            }
+            observe_total_time(0, total_time, false);
+            inc_host_error(0);
+            e
         })?;
+
     let guest_time = measurement.stop_with("=> Proof generated");
-    observe_guest_time(
-        &proof_request.proof_type,
-        proof_request.block_number,
-        guest_time,
-        true,
-    );
-    memory::print_stats("Prover peak memory used: ");
 
-    inc_guest_success(&proof_request.proof_type, proof_request.block_number);
     let total_time = total_time.stop_with("====> Complete proof generated");
-    observe_total_time(proof_request.block_number, total_time, true);
-
-    // Cache the input for future use.
-    set_cached_input(
-        &opts.cache_path,
-        proof_request.block_number,
-        &proof_request.network.to_string(),
-        &input,
-    )?;
 
     ProofResponse::try_from(proof)
 }
