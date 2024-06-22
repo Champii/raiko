@@ -179,11 +179,7 @@ impl Sp1DistributedProver {
         }))
     }
 
-    pub async fn run_as_worker(
-        /* input: GuestInput,
-        config: &ProverConfig, */
-        data: &PartialProofRequestData,
-    ) -> ProverResult<Proof> {
+    pub async fn run_as_worker(data: &PartialProofRequestData) -> ProverResult<Proof> {
         let sp1_config = data.request.clone();
 
         println!("Running SP1 Distributed worker {}", data.checkpoint_id);

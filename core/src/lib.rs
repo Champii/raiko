@@ -146,12 +146,7 @@ impl Raiko {
         input: GuestInput,
         data: PartialProofRequestData,
     ) -> RaikoResult<Proof> {
-        let config = serde_json::to_value(&self.request)?;
-        /* self.request
-        .proof_type
-        .run_prover(input, output, &data)
-        .await */
-        sp1_driver::Sp1DistributedProver::run_as_worker(input, &config, &data)
+        sp1_driver::Sp1DistributedProver::run_as_worker(&data)
             .await
             .map_err(|e| e.into())
     }
