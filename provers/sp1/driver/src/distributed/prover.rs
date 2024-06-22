@@ -108,8 +108,12 @@ impl Sp1DistributedProver {
             });
         }
 
+        let checkpoints_chunks = checkpoints
+            .chunks(checkpoints.len() / ip_list.len())
+            .collect::<Vec<_>>();
+
         // Send the checkpoints to the workers
-        for (i, checkpoint) in checkpoints.iter().enumerate() {
+        for (i, checkpoint) in checkpoints_chunks.iter().enumerate() {
             queue_tx
                 .send((i, bincode::serialize(&checkpoint).unwrap()))
                 .await

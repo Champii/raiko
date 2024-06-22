@@ -723,7 +723,7 @@ mod sp1_specifics {
         program: Program,
         config: BabyBearPoseidon2,
         opts: SP1CoreOpts,
-        checkpoint: ExecutionState,
+        checkpoints: Vec<ExecutionState>,
         mut challenger: DuplexChallenger<Val, Perm, 16, 8>,
         public_values: sp1_core::air::PublicValues<u32, u32>,
     ) -> Vec<ShardProof<BabyBearPoseidon2>> {
@@ -740,65 +740,67 @@ mod sp1_specifics {
 
         let now = Instant::now();
 
-        let mut events = {
-            let mut runtime = Runtime::recover(program.clone(), checkpoint, opts);
-            let (events, _) = tracing::debug_span!("runtime.trace")
-                .in_scope(|| runtime.execute_record().unwrap());
-            events
-        };
-
-        log::debug!("Runtime recover took {:?}", now.elapsed());
-
-        let now = Instant::now();
-
-        events.public_values = public_values;
-        let checkpoint_shards =
-            tracing::info_span!("shard").in_scope(|| machine.shard(events, &sharding_config));
-
-        log::debug!("Checkpoint sharding took {:?}", now.elapsed());
-
         let proving_time = Instant::now();
 
-        let mut proofs = checkpoint_shards
-            .into_iter()
-            .map(|shard| {
-                let config = machine.config();
-                log::info!("Commit main");
+        for state in checkpoints {
+            let mut events = {
+                let mut runtime = Runtime::recover(program.clone(), state, opts);
+                let (events, _) = tracing::debug_span!("runtime.trace")
+                    .in_scope(|| runtime.execute_record().unwrap());
+                events
+            };
 
-                let now = Instant::now();
-                let shard_data =
-                    LocalProver::commit_main(config, &machine, &shard, shard.index() as usize);
+            log::debug!("Runtime recover took {:?}", now.elapsed());
 
-                log::debug!("Commit main took {:?}", now.elapsed());
+            let now = Instant::now();
 
-                let now = Instant::now();
+            events.public_values = public_values;
+            let checkpoint_shards =
+                tracing::info_span!("shard").in_scope(|| machine.shard(events, &sharding_config));
 
-                let chip_ordering = shard_data.chip_ordering.clone();
-                let ordered_chips = machine
-                    .shard_chips_ordered(&chip_ordering)
-                    .collect::<Vec<_>>()
-                    .to_vec();
+            log::debug!("Checkpoint sharding took {:?}", now.elapsed());
 
-                log::debug!("Shard chips ordering took {:?}", now.elapsed());
+            let mut proofs = checkpoint_shards
+                .into_iter()
+                .map(|shard| {
+                    let config = machine.config();
+                    log::info!("Commit main");
 
-                let now = Instant::now();
+                    let now = Instant::now();
+                    let shard_data =
+                        LocalProver::commit_main(config, &machine, &shard, shard.index() as usize);
 
-                log::info!("Actually prove shard");
-                let proof = LocalProver::prove_shard(
-                    config,
-                    &pk,
-                    &ordered_chips,
-                    shard_data,
-                    &mut challenger.clone(),
-                );
+                    log::debug!("Commit main took {:?}", now.elapsed());
 
-                log::debug!("Prove shard took {:?}", now.elapsed());
+                    let now = Instant::now();
 
-                proof
-            })
-            .collect::<Vec<_>>();
+                    let chip_ordering = shard_data.chip_ordering.clone();
+                    let ordered_chips = machine
+                        .shard_chips_ordered(&chip_ordering)
+                        .collect::<Vec<_>>()
+                        .to_vec();
 
-        res.append(&mut proofs);
+                    log::debug!("Shard chips ordering took {:?}", now.elapsed());
+
+                    let now = Instant::now();
+
+                    log::info!("Actually prove shard");
+                    let proof = LocalProver::prove_shard(
+                        config,
+                        &pk,
+                        &ordered_chips,
+                        shard_data,
+                        &mut challenger.clone(),
+                    );
+
+                    log::debug!("Prove shard took {:?}", now.elapsed());
+
+                    proof
+                })
+                .collect::<Vec<_>>();
+
+            res.append(&mut proofs);
+        }
 
         log::debug!("Proving took {:?}", proving_time.elapsed());
 
