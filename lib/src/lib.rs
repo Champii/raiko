@@ -49,6 +49,7 @@ pub struct PartialProofRequestData {
     pub serialized_challenger: Vec<u8>,
     // pub serialized_pk: Vec<u8>,
     pub public_values: Vec<u8>,
+    pub shard_batch_size: usize,
 }
 
 #[cfg(not(target_os = "zkvm"))]

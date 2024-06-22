@@ -64,13 +64,15 @@ impl Sp1DistributedProver {
         let mut opts = SP1CoreOpts::default();
         opts.shard_batch_size = 1;
 
-        let (checkpoints, challenger, public_values_stream, public_values) = prove_partial_old(
-            program.clone(),
-            &stdin,
-            proving_config.clone(),
-            opts.clone(),
-        )
-        .unwrap();
+        let (checkpoints, challenger, public_values_stream, public_values, shard_batch_size) =
+            prove_partial_old(
+                program.clone(),
+                &stdin,
+                proving_config.clone(),
+                opts.clone(),
+                ip_list.len(),
+            )
+            .unwrap();
 
         let mut config = config.clone();
 
@@ -101,6 +103,7 @@ impl Sp1DistributedProver {
                 queue_tx.clone(),
                 bincode::serialize(&public_values).unwrap(),
                 bincode::serialize(&challenger).unwrap(),
+                shard_batch_size,
             );
 
             tokio::spawn(async move {
@@ -108,12 +111,12 @@ impl Sp1DistributedProver {
             });
         }
 
-        let checkpoints_chunks = checkpoints
-            .chunks(checkpoints.len() / ip_list.len())
-            .collect::<Vec<_>>();
+        /* let checkpoints_chunks = checkpoints
+        .chunks((checkpoints.len() as f64 / ip_list.len() as f64).ceil() as usize)
+        .collect::<Vec<_>>(); */
 
         // Send the checkpoints to the workers
-        for (i, checkpoint) in checkpoints_chunks.iter().enumerate() {
+        for (i, checkpoint) in checkpoints.iter().enumerate() {
             queue_tx
                 .send((i, bincode::serialize(&checkpoint).unwrap()))
                 .await
@@ -189,7 +192,7 @@ impl Sp1DistributedProver {
         println!("Running SP1 Distributed worker {}", data.checkpoint_id);
         let config = CoreSC::default();
         let mut opts = SP1CoreOpts::default();
-        opts.shard_batch_size = 1;
+        opts.shard_batch_size = data.shard_batch_size;
 
         let partial_proof = short_circuit_proof(
             Program::from(ELF),
