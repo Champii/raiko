@@ -127,6 +127,8 @@ async fn handle_partial_proof(
             e
         })?;
 
+    println!("Proof generated, size: {}", proof.len());
+
     total_time.stop_with("====> Complete proof generated");
 
     // ProofResponse::try_from(proof)
@@ -271,12 +273,16 @@ async fn partial_proof_handler(
     multipart: Multipart,
 ) -> HostResult<Vec<u8>> {
     inc_current_req();
-    handle_partial_proof(prover_state, multipart)
+    let res = handle_partial_proof(prover_state, multipart)
         .await
         .map_err(|e| {
             dec_current_req();
             e
-        })
+        });
+
+    println!("Back to the handler");
+
+    res
 }
 
 #[derive(OpenApi)]
