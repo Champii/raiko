@@ -268,6 +268,14 @@ async fn proof_handler(
     })
 }
 
+#[utoipa::path(post, path = "/proof/partial",
+    tag = "Proving shard",
+    request_body = Multipart,
+    responses (
+        (status = 200, description = "Successfully computed shard proof", body = Status)
+    )
+)]
+#[debug_handler(state = ProverState)]
 async fn partial_proof_handler(
     State(prover_state): State<ProverState>,
     multipart: Multipart,
@@ -286,7 +294,7 @@ async fn partial_proof_handler(
 }
 
 #[derive(OpenApi)]
-#[openapi(paths(proof_handler))]
+#[openapi(paths(proof_handler, partial_proof_handler))]
 struct Docs;
 
 pub fn create_docs() -> utoipa::openapi::OpenApi {
