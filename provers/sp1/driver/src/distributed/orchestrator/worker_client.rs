@@ -80,7 +80,9 @@ impl WorkerClient {
 
         match response_result {
             Ok(response) => {
+                println!("Got answer from worker {}", self.id);
                 let value: Value = response.json().await.unwrap();
+                println!("Got value");
                 let sp1_response: Sp1Response =
                     serde_json::from_str(&value["data"].to_string()).unwrap();
 
