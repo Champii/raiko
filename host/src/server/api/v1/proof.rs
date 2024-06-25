@@ -105,7 +105,7 @@ async fn handle_partial_proof(
         chain_specs: _,
     }: ProverState,
     mut multipart: Multipart,
-) -> HostResult<ProofResponse> {
+) -> HostResult<Vec<u8>> {
     let mut data = Bytes::new();
     while let Some(field) = multipart.next_field().await.unwrap() {
         if let Some("FileData") = field.name() {
@@ -129,7 +129,8 @@ async fn handle_partial_proof(
 
     total_time.stop_with("====> Complete proof generated");
 
-    ProofResponse::try_from(proof)
+    // ProofResponse::try_from(proof)
+    Ok(proof)
 }
 
 async fn handle_proof(
@@ -268,7 +269,7 @@ async fn proof_handler(
 async fn partial_proof_handler(
     State(prover_state): State<ProverState>,
     multipart: Multipart,
-) -> HostResult<ProofResponse> {
+) -> HostResult<Vec<u8>> {
     inc_current_req();
     handle_partial_proof(prover_state, multipart)
         .await

@@ -118,7 +118,7 @@ impl Sp1DistributedProver {
         }))
     }
 
-    pub async fn run_as_worker(data: &[u8]) -> ProverResult<Proof> {
+    pub async fn run_as_worker(data: &[u8]) -> ProverResult<Vec<u8>> {
         let partial_proof_request: PartialProofRequestData = bincode::deserialize(data).unwrap();
 
         println!(
@@ -128,8 +128,12 @@ impl Sp1DistributedProver {
 
         let partial_proof = short_circuit_proof(&partial_proof_request);
 
-        to_proof(Ok(Sp1Response {
+        let serialized_proof = bincode::serialize(&partial_proof).unwrap();
+
+        Ok(serialized_proof)
+
+        /* to_proof(Ok(Sp1Response {
             proof: serde_json::to_string(&partial_proof).unwrap(),
-        }))
+        })) */
     }
 }

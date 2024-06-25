@@ -1,8 +1,7 @@
 use async_channel::{Receiver, Sender};
-use serde_json::Value;
-use sp1_core::runtime::ExecutionState;
+use sp1_core::{runtime::ExecutionState, stark::ShardProof, utils::BabyBearPoseidon2};
 
-use crate::{distributed::partial_proof_request::PartialProofRequestData, Sp1Response};
+use crate::distributed::partial_proof_request::PartialProofRequestData;
 
 pub struct WorkerClient {
     /// The id of the worker
@@ -12,7 +11,7 @@ pub struct WorkerClient {
     /// A queue to receive the checkpoint to compute the partial proof
     queue: Receiver<(usize, ExecutionState)>,
     /// A channel to send back the id of the checkpoint along with the json strings encoding the computed partial proofs
-    answer: Sender<(usize, String)>,
+    answer: Sender<(usize, Vec<ShardProof<BabyBearPoseidon2>>)>,
     partial_proof_request: PartialProofRequestData,
 }
 
@@ -21,7 +20,7 @@ impl WorkerClient {
         id: usize,
         url: String,
         queue: Receiver<(usize, ExecutionState)>,
-        answer: Sender<(usize, String)>,
+        answer: Sender<(usize, Vec<ShardProof<BabyBearPoseidon2>>)>,
         partial_proof_request: PartialProofRequestData,
     ) -> Self {
         WorkerClient {
@@ -56,7 +55,7 @@ impl WorkerClient {
         &self,
         i: usize,
         checkpoint: ExecutionState,
-    ) -> Result<String, reqwest::Error> {
+    ) -> Result<Vec<ShardProof<BabyBearPoseidon2>>, reqwest::Error> {
         log::info!("Sending checkpoint to worker {}: {}", self.id, self.url);
 
         let mut request = self.partial_proof_request.clone();
@@ -81,10 +80,12 @@ impl WorkerClient {
         match response_result {
             Ok(response) => {
                 println!("Got answer from worker {}", self.id);
-                let value: Value = response.json().await.unwrap();
+                let value = response.bytes().await.unwrap();
                 println!("Got value");
-                let sp1_response: Sp1Response =
-                    serde_json::from_str(&value["data"].to_string()).unwrap();
+                /* let sp1_response: Sp1Response =
+                serde_json::from_str(&value["data"].to_string()).unwrap(); */
+
+                let partial_proofs = bincode::deserialize(&value).unwrap();
 
                 log::info!(
                     "Received proof for checkpoint  from worker {}: {} in {}s",
@@ -93,7 +94,7 @@ impl WorkerClient {
                     now.elapsed().as_secs()
                 );
 
-                Ok(sp1_response.proof)
+                Ok(partial_proofs)
             }
             Err(e) => Err(e),
         }

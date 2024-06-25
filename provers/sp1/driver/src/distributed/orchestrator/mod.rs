@@ -39,9 +39,9 @@ pub async fn distribute_work(
 
     // Get the partial proofs from the workers
     loop {
-        let (checkpoint_id, partial_proof_json) = answer_rx.recv().await.unwrap();
+        let (checkpoint_id, partial_proof) = answer_rx.recv().await.unwrap();
 
-        let partial_proof = serde_json::from_str::<Vec<_>>(partial_proof_json.as_str()).unwrap();
+        // let partial_proof = serde_json::from_str::<Vec<_>>(partial_proof_json.as_str()).unwrap();
 
         proofs.push((checkpoint_id as usize, partial_proof));
 
