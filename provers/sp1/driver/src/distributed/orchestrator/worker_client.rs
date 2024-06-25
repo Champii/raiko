@@ -39,7 +39,13 @@ impl WorkerClient {
 
             match partial_proof_result {
                 Ok(partial_proof) => self.answer.send((i, partial_proof)).await.unwrap(),
-                Err(_e) => {
+                Err(e) => {
+                    log::error!(
+                        "Error while sending checkpoint to worker {}: {}. {}",
+                        self.id,
+                        self.url,
+                        e,
+                    );
                     break;
                 }
             }
