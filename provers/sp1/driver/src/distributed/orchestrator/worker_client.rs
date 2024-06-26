@@ -13,6 +13,7 @@ pub struct WorkerClient {
     /// A channel to send back the id of the checkpoint along with the json strings encoding the computed partial proofs
     answer: Sender<(usize, Vec<ShardProof<BabyBearPoseidon2>>)>,
     partial_proof_request: PartialProofRequestData,
+    http_client: reqwest::Client,
 }
 
 impl WorkerClient {
@@ -22,6 +23,7 @@ impl WorkerClient {
         queue: Receiver<(usize, ExecutionState)>,
         answer: Sender<(usize, Vec<ShardProof<BabyBearPoseidon2>>)>,
         partial_proof_request: PartialProofRequestData,
+        http_client: reqwest::Client,
     ) -> Self {
         WorkerClient {
             id,
@@ -29,6 +31,7 @@ impl WorkerClient {
             queue,
             answer,
             partial_proof_request,
+            http_client,
         }
     }
 
@@ -71,7 +74,8 @@ impl WorkerClient {
             .text("resourceName", "checkpoint")
             .part("FileData", part);
 
-        let response_result = reqwest::Client::new()
+        let response_result = self
+            .http_client
             .post(&self.url)
             .multipart(form)
             .send()

@@ -13,6 +13,8 @@ pub async fn distribute_work(
     let (queue_tx, queue_rx) = async_channel::unbounded();
     let (answer_tx, answer_rx) = async_channel::unbounded();
 
+    let http_client = reqwest::Client::new();
+
     // Spawn the workers
     for (i, url) in ip_list.iter().enumerate() {
         let worker = WorkerClient::new(
@@ -21,6 +23,7 @@ pub async fn distribute_work(
             queue_rx.clone(),
             answer_tx.clone(),
             partial_proof_request.clone(),
+            http_client.clone(),
         );
 
         tokio::spawn(async move {
