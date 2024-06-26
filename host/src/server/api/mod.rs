@@ -61,7 +61,7 @@ pub fn create_docs() -> utoipa::openapi::OpenApi {
 async fn check_max_body_size(req: Request, next: Next) -> Response {
     // 1GB
     // This is needed to allow for partial proof requests to go through
-    const MAX_BODY_SIZE: u64 = 1 << 30;
+    /* const MAX_BODY_SIZE: u64 = 1 << 30;
 
     let response_content_length = match req.body().size_hint().upper() {
         Some(v) => v,
@@ -72,7 +72,7 @@ async fn check_max_body_size(req: Request, next: Next) -> Response {
         let mut resp = Response::new(axum::body::Body::from("request too large"));
         *resp.status_mut() = StatusCode::BAD_REQUEST;
         return resp;
-    }
+    } */
 
     next.run(req).await
 }
