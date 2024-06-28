@@ -124,12 +124,14 @@ impl WorkerClient {
 
         stream.write_u64(data.len() as u64).await?;
         stream.flush().await?;
-        println!("Sent size: {}", data.len() as u64);
+        println!("Sent size: {} to worker {}", data.len() as u64, self.id);
 
         stream.write_all(&data).await?;
         stream.flush().await?;
 
-        let response = read_data(stream).await?;
+        let response = read_data(&mut stream).await?;
+
+        stream.shutdown().await?;
 
         let partial_proofs = bincode::deserialize(&response).unwrap();
 
@@ -137,7 +139,7 @@ impl WorkerClient {
     }
 }
 
-async fn read_data(mut socket: TcpStream) -> Result<Vec<u8>, std::io::Error> {
+pub async fn read_data(socket: &mut TcpStream) -> Result<Vec<u8>, std::io::Error> {
     let size = socket.read_u64().await.unwrap();
     println!("Got size: {}", size);
 

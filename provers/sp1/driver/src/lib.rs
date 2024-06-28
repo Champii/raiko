@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 mod distributed;
 mod local;
 
+pub use distributed::read_data;
 pub use distributed::Sp1DistributedProver;
 pub use local::Sp1Prover;
 

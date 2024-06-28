@@ -9,40 +9,8 @@ use tracing::info;
 
 pub mod api;
 
-async fn read_data(socket: &mut TcpStream) -> Result<Vec<u8>, std::io::Error> {
-    let size = socket.read_u64().await.unwrap();
-    println!("Got size: {}", size);
-
-    let mut data = Vec::new();
-
-    let mut buf_data = BufWriter::new(&mut data);
-    let mut buf = [0; 1024];
-    let mut total_read = 0;
-
-    loop {
-        let n = match socket.read(&mut buf).await {
-            // socket closed
-            Ok(n) if n == 0 => return Ok(data),
-            Ok(n) => {
-                buf_data.write_all(&buf[..n]).await.unwrap();
-                buf_data.flush().await.unwrap();
-
-                total_read += n;
-
-                if total_read == size as usize {
-                    return Ok(data);
-                }
-            }
-            Err(e) => {
-                eprintln!("failed to read from socket; err = {:?}", e);
-                return Err(e);
-            }
-        };
-    }
-}
-
 async fn process_worker_socket(mut socket: TcpStream) {
-    let data = read_data(&mut socket).await.unwrap();
+    let data = sp1_driver::read_data(&mut socket).await.unwrap();
 
     let result = sp1_driver::Sp1DistributedProver::run_as_worker(&data).await;
 
@@ -66,6 +34,9 @@ pub async fn listen_worker() {
     loop {
         let (socket, _) = listener.accept().await.unwrap();
         process_worker_socket(socket).await;
+        socket.shutdown().await?;
+
+        break;
     }
 }
 

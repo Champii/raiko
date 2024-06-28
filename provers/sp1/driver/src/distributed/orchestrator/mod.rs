@@ -5,6 +5,8 @@ use worker_client::WorkerClient;
 
 use super::partial_proof_request::PartialProofRequestData;
 
+pub use worker_client::read_data;
+
 pub async fn distribute_work(
     ip_list: Vec<String>,
     checkpoints: Vec<ExecutionState>,
