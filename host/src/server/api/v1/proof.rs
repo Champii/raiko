@@ -18,6 +18,7 @@ use raiko_lib::{
     Measurement,
 };
 use serde_json::Value;
+use tokio::net::TcpListener;
 use tracing::{debug, info};
 use utoipa::OpenApi;
 
@@ -302,10 +303,9 @@ pub fn create_docs() -> utoipa::openapi::OpenApi {
 }
 
 pub fn create_router() -> Router<ProverState> {
-    Router::new()
-        .route("/", post(proof_handler))
-        .route("/partial", post(partial_proof_handler))
-        .layer(DefaultBodyLimit::disable())
+    Router::new().route("/", post(proof_handler))
+    /* .route("/partial", post(partial_proof_handler))
+    .layer(DefaultBodyLimit::disable()) */
 }
 
 #[cfg(test)]

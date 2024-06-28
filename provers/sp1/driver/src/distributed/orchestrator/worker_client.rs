@@ -1,5 +1,9 @@
 use async_channel::{Receiver, Sender};
 use sp1_core::{runtime::ExecutionState, stark::ShardProof, utils::BabyBearPoseidon2};
+use tokio::{
+    io::{AsyncReadExt, AsyncWriteExt, BufWriter},
+    net::TcpStream,
+};
 
 use crate::distributed::partial_proof_request::PartialProofRequestData;
 
@@ -37,7 +41,7 @@ impl WorkerClient {
 
     pub async fn run(&self) {
         while let Ok((i, checkpoint)) = self.queue.recv().await {
-            let partial_proof_result = self.send_work(i, checkpoint).await;
+            let partial_proof_result = self.send_work_tcp(i, checkpoint).await;
 
             match partial_proof_result {
                 Ok(partial_proof) => self.answer.send((i, partial_proof)).await.unwrap(),
@@ -102,5 +106,48 @@ impl WorkerClient {
             }
             Err(e) => Err(e),
         }
+    }
+
+    async fn send_work_tcp(
+        &self,
+        i: usize,
+        checkpoint: ExecutionState,
+    ) -> Result<Vec<ShardProof<BabyBearPoseidon2>>, std::io::Error> {
+        let mut stream = TcpStream::connect(&self.url).await?;
+
+        let mut request = self.partial_proof_request.clone();
+
+        request.checkpoint_id = i;
+        request.checkpoint_data = checkpoint;
+
+        let data = bincode::serialize(&request).unwrap();
+
+        stream.write_all(&data).await?;
+
+        let response = read_data(stream).await?;
+
+        let partial_proofs = bincode::deserialize(&response).unwrap();
+
+        Ok(partial_proofs)
+    }
+}
+
+async fn read_data(mut socket: TcpStream) -> Result<Vec<u8>, std::io::Error> {
+    let mut data = Vec::new();
+    let mut buf_data = BufWriter::new(&mut data);
+    let mut buf = [0; 1024];
+
+    loop {
+        let n = match socket.read(&mut buf).await {
+            // socket closed
+            Ok(n) if n == 0 => return Ok(data),
+            Ok(n) => {
+                buf_data.write_all(&buf[..n]).await.unwrap();
+            }
+            Err(e) => {
+                eprintln!("failed to read from socket; err = {:?}", e);
+                return Err(e);
+            }
+        };
     }
 }
