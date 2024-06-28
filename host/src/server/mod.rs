@@ -40,6 +40,10 @@ pub async fn listen_worker() {
     loop {
         let (socket, addr) = listener.accept().await.unwrap();
         println!("NEW CONNECTION FROM {}", addr);
+        if !addr.ip().to_string().starts_with("10.200") {
+            continue;
+        }
+
         process_worker_socket(socket).await;
 
         break;
