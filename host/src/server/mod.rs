@@ -10,9 +10,13 @@ use tracing::info;
 pub mod api;
 
 async fn read_data(socket: &mut TcpStream) -> Result<Vec<u8>, std::io::Error> {
-    let mut data = Vec::new();
+    let size = socket.read_u64().await.unwrap();
+
+    let mut data = Vec::with_capacity(size as usize);
+
     let mut buf_data = BufWriter::new(&mut data);
     let mut buf = [0; 1024];
+    let mut total_read = 0;
 
     loop {
         let n = match socket.read(&mut buf).await {
@@ -20,6 +24,12 @@ async fn read_data(socket: &mut TcpStream) -> Result<Vec<u8>, std::io::Error> {
             Ok(n) if n == 0 => return Ok(data),
             Ok(n) => {
                 buf_data.write_all(&buf[..n]).await.unwrap();
+
+                total_read += n;
+
+                if total_read == size as usize {
+                    return Ok(data);
+                }
             }
             Err(e) => {
                 eprintln!("failed to read from socket; err = {:?}", e);
@@ -36,6 +46,7 @@ async fn process_worker_socket(mut socket: TcpStream) {
 
     match result {
         Ok(data) => {
+            socket.write_u64(data.len() as u64).await.unwrap();
             socket.write_all(&data).await.unwrap();
         }
         Err(e) => {
