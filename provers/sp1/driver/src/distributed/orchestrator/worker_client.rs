@@ -122,6 +122,8 @@ impl WorkerClient {
 
         let data = bincode::serialize(&request).unwrap();
 
+        stream.writable().await.unwrap();
+
         stream.write_u64(data.len() as u64).await?;
         stream.flush().await?;
         println!("Sent size: {} to worker {}", data.len() as u64, self.id);
@@ -140,6 +142,7 @@ impl WorkerClient {
 }
 
 pub async fn read_data(socket: &mut TcpStream) -> Result<Vec<u8>, std::io::Error> {
+    socket.readable().await.unwrap();
     let size = socket.read_u64().await.unwrap();
     println!("Got size: {}", size);
 
@@ -150,6 +153,7 @@ pub async fn read_data(socket: &mut TcpStream) -> Result<Vec<u8>, std::io::Error
     let mut total_read = 0;
 
     loop {
+        socket.readable().await.unwrap();
         let n = match socket.read(&mut buf).await {
             // socket closed
             Ok(n) if n == 0 => return Ok(data),
@@ -162,6 +166,9 @@ pub async fn read_data(socket: &mut TcpStream) -> Result<Vec<u8>, std::io::Error
                 if total_read == size as usize {
                     return Ok(data);
                 }
+            }
+            Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
+                continue;
             }
             Err(e) => {
                 eprintln!("failed to read from socket; err = {:?}", e);

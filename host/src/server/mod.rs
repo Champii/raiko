@@ -16,6 +16,7 @@ async fn process_worker_socket(mut socket: TcpStream) {
 
     match result {
         Ok(data) => {
+            socket.writable().await.unwrap();
             socket.write_u64(data.len() as u64).await.unwrap();
             socket.flush().await.unwrap();
             println!("Sent size: {}", data.len() as u64);
