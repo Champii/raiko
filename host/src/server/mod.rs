@@ -31,7 +31,11 @@ async fn process_worker_socket(mut socket: TcpStream) {
 }
 
 pub async fn listen_worker() {
-    let listener = TcpListener::bind("0.0.0.0:8081").await.unwrap();
+    let local_addr = std::fs::read_to_string("local_addr")
+        .unwrap()
+        .trim()
+        .to_string();
+    let listener = TcpListener::bind(local_addr).await.unwrap();
 
     loop {
         let (socket, addr) = listener.accept().await.unwrap();
