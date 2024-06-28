@@ -11,6 +11,7 @@ pub mod api;
 
 async fn read_data(socket: &mut TcpStream) -> Result<Vec<u8>, std::io::Error> {
     let size = socket.read_u64().await.unwrap();
+    println!("Got size: {}", size);
 
     let mut data = Vec::with_capacity(size as usize);
 
@@ -47,6 +48,7 @@ async fn process_worker_socket(mut socket: TcpStream) {
     match result {
         Ok(data) => {
             socket.write_u64(data.len() as u64).await.unwrap();
+            println!("Sent size: {}", data.len() as u64);
             socket.write_all(&data).await.unwrap();
         }
         Err(e) => {

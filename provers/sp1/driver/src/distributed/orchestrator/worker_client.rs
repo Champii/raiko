@@ -123,6 +123,7 @@ impl WorkerClient {
         let data = bincode::serialize(&request).unwrap();
 
         stream.write_u64(data.len() as u64).await?;
+        println!("Sent size: {}", data.len() as u64);
 
         stream.write_all(&data).await?;
 
@@ -136,6 +137,7 @@ impl WorkerClient {
 
 async fn read_data(mut socket: TcpStream) -> Result<Vec<u8>, std::io::Error> {
     let size = socket.read_u64().await.unwrap();
+    println!("Got size: {}", size);
 
     let mut data = Vec::with_capacity(size as usize);
 
