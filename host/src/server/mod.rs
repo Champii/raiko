@@ -21,7 +21,7 @@ async fn process_worker_socket(mut socket: TcpStream) {
             println!("Sent size: {}", data.len() as u64);
             socket.write_all(&data).await.unwrap();
             socket.flush().await.unwrap();
-            socket.shutdown().await.unwrap();
+            // socket.shutdown().await.unwrap();
         }
         Err(e) => {
             eprintln!("Error: {:?}", e);

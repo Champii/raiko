@@ -131,7 +131,7 @@ impl WorkerClient {
 
         let response = read_data(&mut stream).await?;
 
-        stream.shutdown().await.unwrap();
+        // stream.shutdown().await.unwrap();
 
         let partial_proofs = bincode::deserialize(&response).unwrap();
 
