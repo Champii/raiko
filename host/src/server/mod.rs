@@ -34,7 +34,8 @@ pub async fn listen_worker() {
     let listener = TcpListener::bind("0.0.0.0:8081").await.unwrap();
 
     loop {
-        let (socket, _) = listener.accept().await.unwrap();
+        let (socket, addr) = listener.accept().await.unwrap();
+        println!("NEW CONNECTION FROM {}", addr);
         process_worker_socket(socket).await;
 
         break;

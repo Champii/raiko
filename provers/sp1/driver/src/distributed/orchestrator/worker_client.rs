@@ -113,6 +113,7 @@ impl WorkerClient {
         i: usize,
         checkpoint: ExecutionState,
     ) -> Result<Vec<ShardProof<BabyBearPoseidon2>>, std::io::Error> {
+        println!("CONNECTING TO WORKER {}: {}", self.id, self.url);
         let mut stream = TcpStream::connect(&self.url).await?;
 
         let mut request = self.partial_proof_request.clone();
@@ -124,12 +125,16 @@ impl WorkerClient {
 
         stream.writable().await.unwrap();
 
+        println!("Socket is writable, sending data to worker {}", self.id);
+
         stream.write_u64(data.len() as u64).await?;
         stream.flush().await?;
         println!("Sent size: {} to worker {}", data.len() as u64, self.id);
 
         stream.write_all(&data).await?;
         stream.flush().await?;
+
+        println!("All data has been sent to worker {}", self.id);
 
         let response = read_data(&mut stream).await?;
 
