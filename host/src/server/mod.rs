@@ -13,7 +13,7 @@ async fn read_data(socket: &mut TcpStream) -> Result<Vec<u8>, std::io::Error> {
     let size = socket.read_u64().await.unwrap();
     println!("Got size: {}", size);
 
-    let mut data = Vec::with_capacity(size as usize);
+    let mut data = Vec::new();
 
     let mut buf_data = BufWriter::new(&mut data);
     let mut buf = [0; 1024];
@@ -48,8 +48,10 @@ async fn process_worker_socket(mut socket: TcpStream) {
     match result {
         Ok(data) => {
             socket.write_u64(data.len() as u64).await.unwrap();
+            socket.flush().await.unwrap();
             println!("Sent size: {}", data.len() as u64);
             socket.write_all(&data).await.unwrap();
+            socket.flush().await.unwrap();
         }
         Err(e) => {
             eprintln!("Error: {:?}", e);
