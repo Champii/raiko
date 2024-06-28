@@ -167,7 +167,7 @@ pub async fn read_data(socket: &mut TcpStream) -> Result<Vec<u8>, std::io::Error
                     return Ok(data);
                 }
             }
-            Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
+            Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
                 continue;
             }
             Err(e) => {
