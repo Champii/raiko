@@ -19,7 +19,8 @@ pub async fn distribute_work(
     for (i, url) in ip_list.iter().enumerate() {
         let worker = WorkerClient::new(
             i,
-            "http://".to_string() + url + "/proof/partial".into(),
+            // "http://".to_string() + url + "/proof/partial".into(),
+            url.clone(),
             queue_rx.clone(),
             answer_tx.clone(),
             partial_proof_request.clone(),
