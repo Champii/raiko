@@ -153,6 +153,7 @@ async fn read_data(mut socket: TcpStream) -> Result<Vec<u8>, std::io::Error> {
             Ok(n) if n == 0 => return Ok(data),
             Ok(n) => {
                 buf_data.write_all(&buf[..n]).await.unwrap();
+                buf_data.flush().await.unwrap();
 
                 total_read += n;
 
