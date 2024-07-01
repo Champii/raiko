@@ -104,6 +104,7 @@ impl WorkerClient {
 
 // FIXME: This shouldnt be here
 pub async fn read_data(socket: &mut TcpStream) -> Result<Vec<u8>, std::io::Error> {
+    // TODO: limit the size of the data
     let size = socket.read_u64().await? as usize;
 
     let mut data = Vec::new();

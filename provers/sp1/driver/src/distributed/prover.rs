@@ -72,16 +72,19 @@ impl Sp1DistributedProver {
     ) -> ProverResult<SP1ProofWithPublicValues<Vec<ShardProof<BabyBearPoseidon2>>>> {
         let program = Program::from(ELF);
 
-        let ip_list = Self::read_ip_list();
+        let worker_ip_list = Self::read_and_validate_worker_ip_list().await;
 
         let (checkpoints, public_values_stream, partial_proof_request) =
-            commit(program, &stdin, ip_list.len()).unwrap();
+            commit(program, &stdin, worker_ip_list.len()).unwrap();
 
         log::info!("Number of checkpoints: {}", checkpoints.len());
 
-        let proofs =
-            super::orchestrator::distribute_work(ip_list, checkpoints, partial_proof_request)
-                .await?;
+        let proofs = super::orchestrator::distribute_work(
+            worker_ip_list,
+            checkpoints,
+            partial_proof_request,
+        )
+        .await?;
 
         Ok(SP1ProofWithPublicValues {
             proof: proofs,
@@ -107,12 +110,27 @@ impl Sp1DistributedProver {
         Ok(serialized_proof)
     }
 
-    fn read_ip_list() -> Vec<String> {
+    async fn read_and_validate_worker_ip_list() -> Vec<String> {
         let ip_list_string = std::fs::read_to_string("distributed.json")
             .expect("Sp1 Distributed: Need a `distributed.json` file with a list of IP:PORT");
 
-        serde_json::from_str(&ip_list_string).expect(
+        let ip_list: Vec<String> = serde_json::from_str(&ip_list_string).expect(
             "Sp1 Distributed: Invalid JSON for `distributed.json`. need an array of IP:PORT",
-        )
+        );
+
+        let mut reachable_ip_list = Vec::new();
+
+        // try to connect to each worker to make sure they are reachable
+        for ip in &ip_list {
+            let connection_result = tokio::net::TcpStream::connect(ip).await;
+
+            if connection_result.is_err() {
+                panic!("Sp1 Distributed: Worker at {} is unreachable", ip);
+            } else {
+                reachable_ip_list.push(ip.clone());
+            }
+        }
+
+        reachable_ip_list
     }
 }

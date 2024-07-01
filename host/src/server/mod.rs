@@ -38,7 +38,7 @@ pub async fn listen_worker(state: ProverState) {
 
         if let Some(orchestrator_address) = &state.opts.orchestrator_address {
             if addr.ip().to_string() != *orchestrator_address {
-                warn!("Unauthorized worker connection from: {}", addr);
+                warn!("Unauthorized orchestrator connection from: {}", addr);
 
                 continue;
             }
