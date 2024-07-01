@@ -4,8 +4,10 @@ use raiko_lib::{
     input::{GuestInput, GuestOutput},
     prover::{to_proof, Proof, Prover, ProverConfig, ProverResult},
 };
+use serde::{Deserialize, Serialize};
 use sp1_core::{runtime::Program, stark::ShardProof, utils::BabyBearPoseidon2};
 use sp1_sdk::{ProverClient, SP1ProofWithPublicValues, SP1Stdin};
+use tokio::io::AsyncWriteExt;
 
 use crate::{
     distributed::{
@@ -124,13 +126,52 @@ impl Sp1DistributedProver {
         for ip in &ip_list {
             let connection_result = tokio::net::TcpStream::connect(ip).await;
 
-            if connection_result.is_err() {
-                log::error!("Sp1 Distributed: Worker at {} is unreachable. Removing from the list for this task", ip);
-            } else {
-                reachable_ip_list.push(ip.clone());
+            match connection_result {
+                Err(_) => {
+                    log::error!("Sp1 Distributed: Worker at {} is unreachable. Removing from the list for this task", ip);
+                }
+                Ok(mut socket) => {
+                    let ping_message: WorkerEnvelope = WorkerProtocol::Ping.into();
+                    let data = bincode::serialize(&ping_message).unwrap();
+
+                    socket.write_u64(data.len() as u64).await.unwrap();
+                    socket.write_all(&data).await.unwrap();
+
+                    let response = crate::read_data(&mut socket).await.unwrap();
+
+                    let response_envelope: WorkerEnvelope =
+                        bincode::deserialize(&response).unwrap();
+
+                    if response_envelope.magic != 0xdeadbeef {
+                        log::error!("Sp1 Distributed: Worker at {} is not a valid SP1 worker. Removing from the list for this task", ip);
+                    } else {
+                        reachable_ip_list.push(ip.clone());
+                    }
+                }
             }
         }
 
         reachable_ip_list
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct WorkerEnvelope {
+    pub magic: u64,
+    pub data: WorkerProtocol,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub enum WorkerProtocol {
+    Ping,
+    PartialProofRequest(Vec<u8>),
+}
+
+impl From<WorkerProtocol> for WorkerEnvelope {
+    fn from(data: WorkerProtocol) -> Self {
+        WorkerEnvelope {
+            magic: 0xdeadbeef,
+            data,
+        }
     }
 }

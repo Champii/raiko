@@ -7,6 +7,8 @@ mod local;
 
 pub use distributed::read_data;
 pub use distributed::Sp1DistributedProver;
+pub use distributed::{WorkerEnvelope, WorkerProtocol};
+
 pub use local::Sp1Prover;
 
 const ELF: &[u8] = include_bytes!("../../guest/elf/sp1-guest");
