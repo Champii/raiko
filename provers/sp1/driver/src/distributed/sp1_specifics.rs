@@ -19,20 +19,25 @@ use super::partial_proof_request::PartialProofRequest;
 
 fn trace_checkpoint(program: Program, file: &File, opts: SP1CoreOpts) -> ExecutionRecord {
     let mut reader = std::io::BufReader::new(file);
+
     let state = bincode::deserialize_from(&mut reader).expect("failed to deserialize state");
+
     let mut runtime = Runtime::recover(program.clone(), state, opts);
+
     let (events, _) =
         tracing::debug_span!("runtime.trace").in_scope(|| runtime.execute_record().unwrap());
+
     events
 }
 
 pub fn commit(
     program: Program,
     stdin: &SP1Stdin,
-    config: BabyBearPoseidon2,
     nb_workers: usize,
 ) -> Result<(Vec<ExecutionState>, SP1PublicValues, PartialProofRequest), SP1CoreProverError> {
     let proving_start = Instant::now();
+
+    let config = CoreSC::default();
 
     let now = Instant::now();
 
@@ -80,8 +85,6 @@ pub fn commit(
 
         log::debug!("Checkpoint took {:?}", checkpoint_start.elapsed());
 
-        let checkpoint_serialize = Instant::now();
-
         // Save the checkpoint to a temp file.
         let mut tempfile = tempfile::tempfile().map_err(SP1CoreProverError::IoError)?;
 
@@ -100,11 +103,6 @@ pub fn commit(
 
         checkpoints_files.push(tempfile);
 
-        log::debug!(
-            "Checkpoint serialization took {:?}",
-            checkpoint_serialize.elapsed()
-        );
-
         // If we've reached the final checkpoint, break out of the loop.
         if done {
             break (
@@ -113,7 +111,6 @@ pub fn commit(
             );
         }
     };
-    println!("CHECKPOINTS: {}", checkpoints_files.len());
 
     log::debug!("Total checkpointing took {:?}", now.elapsed());
 
@@ -122,7 +119,6 @@ pub fn commit(
     // For each checkpoint, generate events, shard them, commit shards, and observe in challenger.
     let sharding_config = ShardingConfig::default();
 
-    // let mut shard_main_datas = Vec::new();
     let mut challenger = machine.config().challenger();
 
     vk.observe_into(&mut challenger);
@@ -170,15 +166,11 @@ pub fn commit(
 
         log::debug!("Checkpoint commit took {:?}", commit_time.elapsed());
 
-        let observe_time = Instant::now();
-
         // Observe the commitments.
         for (commitment, shard) in commitments.into_iter().zip(checkpoint_shards.iter()) {
             challenger.observe(commitment);
             challenger.observe_slice(&shard.public_values::<Val>()[0..machine.num_pv_elts()]);
         }
-
-        log::debug!("Checkpoint observe took {:?}", observe_time.elapsed());
     }
 
     log::debug!("Checkpoints commitment took {:?}", now.elapsed());

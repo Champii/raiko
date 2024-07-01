@@ -5,7 +5,7 @@ use raiko_lib::{
     prover::{to_proof, Proof, Prover, ProverConfig, ProverResult},
 };
 use sp1_core::{runtime::Program, stark::ShardProof, utils::BabyBearPoseidon2};
-use sp1_sdk::{CoreSC, ProverClient, SP1ProofWithPublicValues, SP1Stdin};
+use sp1_sdk::{ProverClient, SP1ProofWithPublicValues, SP1Stdin};
 
 use crate::{
     distributed::{
@@ -72,17 +72,10 @@ impl Sp1DistributedProver {
     ) -> ProverResult<SP1ProofWithPublicValues<Vec<ShardProof<BabyBearPoseidon2>>>> {
         let program = Program::from(ELF);
 
-        let proving_config = CoreSC::default();
-
         let ip_list = Self::read_ip_list();
 
-        let (checkpoints, public_values_stream, partial_proof_request) = commit(
-            program.clone(),
-            &stdin,
-            proving_config.clone(),
-            ip_list.len(),
-        )
-        .unwrap();
+        let (checkpoints, public_values_stream, partial_proof_request) =
+            commit(program, &stdin, ip_list.len()).unwrap();
 
         log::info!("Number of checkpoints: {}", checkpoints.len());
 
