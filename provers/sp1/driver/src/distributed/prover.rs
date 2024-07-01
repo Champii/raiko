@@ -125,7 +125,7 @@ impl Sp1DistributedProver {
             let connection_result = tokio::net::TcpStream::connect(ip).await;
 
             if connection_result.is_err() {
-                panic!("Sp1 Distributed: Worker at {} is unreachable", ip);
+                error!("Sp1 Distributed: Worker at {} is unreachable. Removing from the list for this task", ip);
             } else {
                 reachable_ip_list.push(ip.clone());
             }
