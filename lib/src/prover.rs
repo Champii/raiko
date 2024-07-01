@@ -48,4 +48,6 @@ pub enum WorkerError {
     IO(#[from] std::io::Error),
     #[error("Worker Serde error: {0}")]
     Serde(#[from] bincode::Error),
+    #[error("Worker invalid magic number")]
+    InvalidMagicNumber,
 }

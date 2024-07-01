@@ -139,10 +139,7 @@ impl Sp1DistributedProver {
 
                     let response = crate::read_data(&mut socket).await.unwrap();
 
-                    let response_envelope: WorkerEnvelope =
-                        bincode::deserialize(&response).unwrap();
-
-                    if response_envelope.magic != 0xdeadbeef {
+                    if response != data {
                         log::error!("Sp1 Distributed: Worker at {} is not a valid SP1 worker. Removing from the list for this task", ip);
                     } else {
                         reachable_ip_list.push(ip.clone());
@@ -172,6 +169,75 @@ impl From<WorkerProtocol> for WorkerEnvelope {
         WorkerEnvelope {
             magic: 0xdeadbeef,
             data,
+        }
+    }
+}
+
+pub struct WorkerSocket {
+    pub socket: tokio::net::TcpStream,
+}
+
+impl WorkerSocket {
+    pub async fn new(socket: tokio::net::TcpStream) -> Self {
+        WorkerSocket { socket }
+    }
+
+    pub async fn send(&mut self, packet: WorkerProtocol) -> Result<(), WorkerError> {
+        let envelope: WorkerEnvelope = packet.into();
+
+        let data = bincode::serialize(&envelope)?;
+
+        self.socket.write_u64(data.len() as u64).await?;
+        self.socket.write_all(&data).await?;
+
+        Ok(())
+    }
+
+    pub async fn receive(&mut self) -> Result<WorkerProtocol, WorkerError> {
+        let data = self.read_data().await?;
+
+        let envelope: WorkerEnvelope = bincode::deserialize(&data)?;
+
+        if envelope.magic != 0xdeadbeef {
+            return Err(WorkerError::InvalidMagicNumber);
+        }
+
+        Ok(envelope.data)
+    }
+
+    pub async fn read_data(&mut self) -> Result<Vec<u8>, std::io::Error> {
+        // TODO: limit the size of the data
+        let size = self.socket.read_u64().await? as usize;
+
+        let mut data = Vec::new();
+
+        let mut buf_data = BufWriter::new(&mut data);
+        let mut buf = [0; 1024];
+        let mut total_read = 0;
+
+        loop {
+            match socket.read(&mut buf).await {
+                // socket closed
+                Ok(n) if n == 0 => return Ok(data),
+                Ok(n) => {
+                    buf_data.write_all(&buf[..n]).await?;
+
+                    total_read += n;
+
+                    if total_read == size {
+                        buf_data.flush().await?;
+
+                        return Ok(data);
+                    }
+
+                    // TODO: handle the case where the data is bigger than expected
+                }
+                Err(e) => {
+                    log::error!("failed to read from socket; err = {:?}", e);
+
+                    return Err(e);
+                }
+            };
         }
     }
 }

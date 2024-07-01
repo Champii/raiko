@@ -10,8 +10,8 @@ use tracing::{error, info, warn};
 
 pub mod api;
 
-async fn handle_worker_socket(mut socket: TcpStream) {
-    let data = sp1_driver::read_data(&mut socket).await.unwrap();
+async fn handle_worker_socket(mut socket: WorkerSocket) {
+    let data = socket.receive().await.unwrap();
 
     let envelope: WorkerEnvelope = bincode::deserialize(&data).unwrap();
 
@@ -73,7 +73,7 @@ pub async fn listen_worker(state: ProverState) {
 
         // We purposely don't spawn the task here, as we want to block to limit the number
         // of concurrent connections to one.
-        handle_worker_socket(socket).await;
+        handle_worker_socket(WorkerSocket::new(socket)).await;
     }
 }
 
