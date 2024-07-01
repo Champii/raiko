@@ -211,8 +211,6 @@ pub fn prove_partial(request_data: &PartialProofRequest) -> Vec<ShardProof<BabyB
 
     log::debug!("Machine setup took {:?}", now.elapsed());
 
-    log::info!("Starting proof shard");
-
     let mut res = vec![];
 
     let now = Instant::now();
@@ -242,10 +240,13 @@ pub fn prove_partial(request_data: &PartialProofRequest) -> Vec<ShardProof<BabyB
 
     let mut proofs = checkpoint_shards
         .into_iter()
-        .map(|shard| {
+        .enumerate()
+        .map(|(i, shard)| {
+            log::info!("Proving shard {}/{}", i + 1, request_data.shard_batch_size);
+
             let config = machine.config();
 
-            log::info!("Commit main");
+            log::debug!("Commit main");
 
             let now = Instant::now();
 
@@ -266,7 +267,7 @@ pub fn prove_partial(request_data: &PartialProofRequest) -> Vec<ShardProof<BabyB
 
             let now = Instant::now();
 
-            log::info!("Actually prove shard");
+            log::debug!("Actually prove shard");
 
             let proof = LocalProver::prove_shard(
                 config,
@@ -284,7 +285,7 @@ pub fn prove_partial(request_data: &PartialProofRequest) -> Vec<ShardProof<BabyB
 
     res.append(&mut proofs);
 
-    log::debug!("Proving took {:?}", proving_time.elapsed());
+    log::info!("Proving took {:?}", proving_time.elapsed());
 
     return res;
 }

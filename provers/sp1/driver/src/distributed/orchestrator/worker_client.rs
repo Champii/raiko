@@ -74,6 +74,13 @@ impl WorkerClient {
     ) -> Result<Vec<ShardProof<BabyBearPoseidon2>>, WorkerError> {
         let mut stream = TcpStream::connect(&self.url).await?;
 
+        log::info!(
+            "Sending checkpoint {} to worker {} at {}",
+            i,
+            self.id,
+            self.url
+        );
+
         let mut request = self.partial_proof_request.clone();
 
         request.checkpoint_id = i;
@@ -95,6 +102,7 @@ impl WorkerClient {
     }
 }
 
+// FIXME: This shouldnt be here
 pub async fn read_data(socket: &mut TcpStream) -> Result<Vec<u8>, std::io::Error> {
     let size = socket.read_u64().await? as usize;
 
