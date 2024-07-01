@@ -45,6 +45,7 @@ pub fn commit(
 
     let mut opts = SP1CoreOpts::default();
 
+    // FIXME: Is this the most efficient ?
     opts.shard_batch_size = 1;
 
     // Execute the program.

@@ -56,11 +56,13 @@ impl WorkerClient {
                     e,
                 );
 
-                break;
+                return;
             }
 
             self.answer.send((i, partial_proof_result)).await.unwrap();
         }
+
+        log::debug!("Worker {} finished", self.id);
     }
 
     async fn send_work_tcp(
