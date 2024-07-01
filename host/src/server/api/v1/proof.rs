@@ -1,12 +1,6 @@
 use std::{fs::File, path::PathBuf};
 
-use axum::{
-    body::Bytes,
-    debug_handler,
-    extract::{DefaultBodyLimit, Multipart, State},
-    routing::post,
-    Json, Router,
-};
+use axum::{debug_handler, extract::State, routing::post, Json, Router};
 use raiko_core::{
     interfaces::{ProofRequest, RaikoError},
     provider::{rpc::RpcBlockDataProvider, BlockDataProvider},
@@ -18,7 +12,6 @@ use raiko_lib::{
     Measurement,
 };
 use serde_json::Value;
-use tokio::net::TcpListener;
 use tracing::{debug, info};
 use utoipa::OpenApi;
 
@@ -98,42 +91,6 @@ async fn validate_cache_input(
             "Cached input is not enabled".to_owned(),
         ))
     }
-}
-
-async fn handle_partial_proof(
-    ProverState {
-        opts: _,
-        chain_specs: _,
-    }: ProverState,
-    mut multipart: Multipart,
-) -> HostResult<Vec<u8>> {
-    let mut data = Bytes::new();
-    while let Some(field) = multipart.next_field().await.unwrap() {
-        if let Some("FileData") = field.name() {
-            data = field.bytes().await.unwrap();
-
-            break;
-        }
-    }
-
-    // Execute the proof generation.
-    let total_time = Measurement::start("", false);
-
-    let proof = sp1_driver::Sp1DistributedProver::run_as_worker(data.as_ref())
-        .await
-        .map_err(|e| {
-            let total_time = total_time.stop_with("====> Proof generation failed");
-            observe_total_time(0, total_time, false);
-            inc_host_error(0);
-            e
-        })?;
-
-    println!("Proof generated, size: {}", proof.len());
-
-    total_time.stop_with("====> Complete proof generated");
-
-    // ProofResponse::try_from(proof)
-    Ok(proof)
 }
 
 async fn handle_proof(
@@ -269,33 +226,8 @@ async fn proof_handler(
     })
 }
 
-#[utoipa::path(post, path = "/proof/partial",
-    tag = "Proving shard",
-    request_body = Multipart,
-    responses (
-        (status = 200, description = "Successfully computed shard proof", body = Status)
-    )
-)]
-#[debug_handler(state = ProverState)]
-async fn partial_proof_handler(
-    State(prover_state): State<ProverState>,
-    multipart: Multipart,
-) -> HostResult<Vec<u8>> {
-    inc_current_req();
-    let res = handle_partial_proof(prover_state, multipart)
-        .await
-        .map_err(|e| {
-            dec_current_req();
-            e
-        });
-
-    println!("Back to the handler");
-
-    res
-}
-
 #[derive(OpenApi)]
-#[openapi(paths(proof_handler, partial_proof_handler))]
+#[openapi(paths(proof_handler))]
 struct Docs;
 
 pub fn create_docs() -> utoipa::openapi::OpenApi {
@@ -304,8 +236,6 @@ pub fn create_docs() -> utoipa::openapi::OpenApi {
 
 pub fn create_router() -> Router<ProverState> {
     Router::new().route("/", post(proof_handler))
-    /* .route("/partial", post(partial_proof_handler))
-    .layer(DefaultBodyLimit::disable()) */
 }
 
 #[cfg(test)]

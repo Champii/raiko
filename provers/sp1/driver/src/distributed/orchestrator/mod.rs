@@ -1,32 +1,31 @@
 mod worker_client;
 
+use raiko_lib::prover::WorkerError;
 use sp1_core::{runtime::ExecutionState, stark::ShardProof, utils::BabyBearPoseidon2};
 use worker_client::WorkerClient;
 
-use super::partial_proof_request::PartialProofRequestData;
+use super::partial_proof_request::PartialProofRequest;
 
 pub use worker_client::read_data;
 
 pub async fn distribute_work(
     ip_list: Vec<String>,
     checkpoints: Vec<ExecutionState>,
-    partial_proof_request: PartialProofRequestData,
-) -> Vec<ShardProof<BabyBearPoseidon2>> {
-    let (queue_tx, queue_rx) = async_channel::unbounded();
-    let (answer_tx, answer_rx) = async_channel::unbounded();
+    partial_proof_request: PartialProofRequest,
+) -> Result<Vec<ShardProof<BabyBearPoseidon2>>, WorkerError> {
+    let mut nb_workers = ip_list.len();
 
-    let http_client = reqwest::Client::new();
+    let (queue_tx, queue_rx) = async_channel::bounded(nb_workers);
+    let (answer_tx, answer_rx) = async_channel::bounded(nb_workers);
 
     // Spawn the workers
     for (i, url) in ip_list.iter().enumerate() {
         let worker = WorkerClient::new(
             i,
-            // "http://".to_string() + url + "/proof/partial".into(),
             url.clone(),
             queue_rx.clone(),
             answer_tx.clone(),
             partial_proof_request.clone(),
-            http_client.clone(),
         );
 
         tokio::spawn(async move {
@@ -34,24 +33,38 @@ pub async fn distribute_work(
         });
     }
 
-    let nb_checkpoints = checkpoints.len();
-
     // Send the checkpoints to the workers
-    for (i, checkpoint) in checkpoints.into_iter().enumerate() {
-        queue_tx.send((i, checkpoint)).await.unwrap();
+    for (i, checkpoint) in checkpoints.iter().enumerate() {
+        queue_tx.send((i, checkpoint.clone())).await.unwrap();
     }
 
     let mut proofs = Vec::new();
 
     // Get the partial proofs from the workers
     loop {
-        let (checkpoint_id, partial_proof) = answer_rx.recv().await.unwrap();
+        let (checkpoint_id, partial_proof_result) = answer_rx.recv().await.unwrap();
 
-        // let partial_proof = serde_json::from_str::<Vec<_>>(partial_proof_json.as_str()).unwrap();
+        match partial_proof_result {
+            Ok(partial_proof) => {
+                proofs.push((checkpoint_id as usize, partial_proof));
+            }
+            Err(_e) => {
+                // Decrease the number of workers
+                nb_workers -= 1;
 
-        proofs.push((checkpoint_id as usize, partial_proof));
+                if nb_workers == 0 {
+                    return Err(WorkerError::AllWorkersFailed);
+                }
 
-        if proofs.len() == nb_checkpoints {
+                // Push back the work for it to be done by another worker
+                queue_tx
+                    .send((checkpoint_id, checkpoints[checkpoint_id as usize].clone()))
+                    .await
+                    .unwrap();
+            }
+        }
+
+        if proofs.len() == checkpoints.len() {
             break;
         }
     }
@@ -64,5 +77,5 @@ pub async fn distribute_work(
         .flatten()
         .collect();
 
-    proofs
+    Ok(proofs)
 }

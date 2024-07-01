@@ -2,7 +2,7 @@ use crate::{interfaces::HostError, server::api::create_router, ProverState};
 use anyhow::Context;
 use std::{net::SocketAddr, str::FromStr};
 use tokio::{
-    io::{AsyncReadExt, AsyncWriteExt, BufWriter},
+    io::AsyncWriteExt,
     net::{TcpListener, TcpStream},
 };
 use tracing::info;
@@ -16,13 +16,8 @@ async fn process_worker_socket(mut socket: TcpStream) {
 
     match result {
         Ok(data) => {
-            socket.writable().await.unwrap();
             socket.write_u64(data.len() as u64).await.unwrap();
-            socket.flush().await.unwrap();
-            println!("Sent size: {}", data.len() as u64);
             socket.write_all(&data).await.unwrap();
-            socket.flush().await.unwrap();
-            // socket.shutdown().await.unwrap();
         }
         Err(e) => {
             eprintln!("Error: {:?}", e);
@@ -31,29 +26,21 @@ async fn process_worker_socket(mut socket: TcpStream) {
 }
 
 pub async fn listen_worker() {
-    let local_addr = std::fs::read_to_string("local_addr")
-        .unwrap()
-        .trim()
-        .to_string();
-    let listener = TcpListener::bind(local_addr).await.unwrap();
+    let listener = TcpListener::bind("0.0.0.0:8081").await.unwrap();
 
     loop {
         let (socket, addr) = listener.accept().await.unwrap();
-        println!("NEW CONNECTION FROM {}", addr);
+
         if !addr.ip().to_string().starts_with("10.200") {
             continue;
         }
 
-        process_worker_socket(socket).await;
-
-        break;
+        tokio::spawn(process_worker_socket(socket));
     }
 }
 
 /// Starts the proverd server.
 pub async fn serve(state: ProverState) -> anyhow::Result<()> {
-    // TMP
-
     tokio::spawn(listen_worker());
 
     let addr = SocketAddr::from_str(&state.opts.address)

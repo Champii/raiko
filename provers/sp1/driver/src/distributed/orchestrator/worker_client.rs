@@ -1,11 +1,12 @@
 use async_channel::{Receiver, Sender};
+use raiko_lib::prover::WorkerError;
 use sp1_core::{runtime::ExecutionState, stark::ShardProof, utils::BabyBearPoseidon2};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt, BufWriter},
     net::TcpStream,
 };
 
-use crate::distributed::partial_proof_request::PartialProofRequestData;
+use crate::distributed::partial_proof_request::PartialProofRequest;
 
 pub struct WorkerClient {
     /// The id of the worker
@@ -15,9 +16,12 @@ pub struct WorkerClient {
     /// A queue to receive the checkpoint to compute the partial proof
     queue: Receiver<(usize, ExecutionState)>,
     /// A channel to send back the id of the checkpoint along with the json strings encoding the computed partial proofs
-    answer: Sender<(usize, Vec<ShardProof<BabyBearPoseidon2>>)>,
-    partial_proof_request: PartialProofRequestData,
-    http_client: reqwest::Client,
+    answer: Sender<(
+        usize,
+        Result<Vec<ShardProof<BabyBearPoseidon2>>, WorkerError>,
+    )>,
+    /// The partial proof request containing the checkpoint data and the challenger
+    partial_proof_request: PartialProofRequest,
 }
 
 impl WorkerClient {
@@ -25,9 +29,11 @@ impl WorkerClient {
         id: usize,
         url: String,
         queue: Receiver<(usize, ExecutionState)>,
-        answer: Sender<(usize, Vec<ShardProof<BabyBearPoseidon2>>)>,
-        partial_proof_request: PartialProofRequestData,
-        http_client: reqwest::Client,
+        answer: Sender<(
+            usize,
+            Result<Vec<ShardProof<BabyBearPoseidon2>>, WorkerError>,
+        )>,
+        partial_proof_request: PartialProofRequest,
     ) -> Self {
         WorkerClient {
             id,
@@ -35,7 +41,6 @@ impl WorkerClient {
             queue,
             answer,
             partial_proof_request,
-            http_client,
         }
     }
 
@@ -43,68 +48,18 @@ impl WorkerClient {
         while let Ok((i, checkpoint)) = self.queue.recv().await {
             let partial_proof_result = self.send_work_tcp(i, checkpoint).await;
 
-            match partial_proof_result {
-                Ok(partial_proof) => self.answer.send((i, partial_proof)).await.unwrap(),
-                Err(e) => {
-                    log::error!(
-                        "Error while sending checkpoint to worker {}: {}. {}",
-                        self.id,
-                        self.url,
-                        e,
-                    );
-                    break;
-                }
-            }
-        }
-    }
-
-    async fn send_work(
-        &self,
-        i: usize,
-        checkpoint: ExecutionState,
-    ) -> Result<Vec<ShardProof<BabyBearPoseidon2>>, reqwest::Error> {
-        log::info!("Sending checkpoint to worker {}: {}", self.id, self.url);
-
-        let mut request = self.partial_proof_request.clone();
-
-        request.checkpoint_id = i;
-        request.checkpoint_data = checkpoint;
-
-        let data = bincode::serialize(&request).unwrap();
-
-        let now = std::time::Instant::now();
-        let part = reqwest::multipart::Part::bytes(data).file_name("checkpoint");
-        let form = reqwest::multipart::Form::new()
-            .text("resourceName", "checkpoint")
-            .part("FileData", part);
-
-        let response_result = self
-            .http_client
-            .post(&self.url)
-            .multipart(form)
-            .send()
-            .await;
-
-        match response_result {
-            Ok(response) => {
-                println!("Got answer from worker {}", self.id);
-                let value = response.bytes().await.unwrap();
-                println!("Got value");
-                /* let sp1_response: Sp1Response =
-                serde_json::from_str(&value["data"].to_string()).unwrap(); */
-
-                let partial_proofs = bincode::deserialize(&value).unwrap();
-
-                log::info!(
-                    "Received proof for checkpoint  from worker {}: {} in {}s",
+            if let Err(e) = partial_proof_result {
+                log::error!(
+                    "Error while sending checkpoint to worker {}: {}. {}",
                     self.id,
                     self.url,
-                    now.elapsed().as_secs()
+                    e,
                 );
 
-                Ok(partial_proofs)
+                break;
             }
-            Err(e) => Err(e),
+
+            self.answer.send((i, partial_proof_result)).await.unwrap();
         }
     }
 
@@ -112,8 +67,7 @@ impl WorkerClient {
         &self,
         i: usize,
         checkpoint: ExecutionState,
-    ) -> Result<Vec<ShardProof<BabyBearPoseidon2>>, std::io::Error> {
-        println!("CONNECTING TO WORKER {}: {}", self.id, self.url);
+    ) -> Result<Vec<ShardProof<BabyBearPoseidon2>>, WorkerError> {
         let mut stream = TcpStream::connect(&self.url).await?;
 
         let mut request = self.partial_proof_request.clone();
@@ -121,35 +75,24 @@ impl WorkerClient {
         request.checkpoint_id = i;
         request.checkpoint_data = checkpoint;
 
-        let data = bincode::serialize(&request).unwrap();
-
-        stream.writable().await.unwrap();
-
-        println!("Socket is writable, sending data to worker {}", self.id);
+        let data = bincode::serialize(&request)?;
 
         stream.write_u64(data.len() as u64).await?;
         stream.flush().await?;
-        println!("Sent size: {} to worker {}", data.len() as u64, self.id);
 
         stream.write_all(&data).await?;
         stream.flush().await?;
 
-        println!("All data has been sent to worker {}", self.id);
-
         let response = read_data(&mut stream).await?;
 
-        // stream.shutdown().await.unwrap();
-
-        let partial_proofs = bincode::deserialize(&response).unwrap();
+        let partial_proofs = bincode::deserialize(&response)?;
 
         Ok(partial_proofs)
     }
 }
 
 pub async fn read_data(socket: &mut TcpStream) -> Result<Vec<u8>, std::io::Error> {
-    socket.readable().await.unwrap();
-    let size = socket.read_u64().await.unwrap();
-    println!("Got size: {}", size);
+    let size = socket.read_u64().await? as usize;
 
     let mut data = Vec::new();
 
@@ -158,25 +101,25 @@ pub async fn read_data(socket: &mut TcpStream) -> Result<Vec<u8>, std::io::Error
     let mut total_read = 0;
 
     loop {
-        socket.readable().await.unwrap();
-        let n = match socket.read(&mut buf).await {
+        match socket.read(&mut buf).await {
             // socket closed
             Ok(n) if n == 0 => return Ok(data),
             Ok(n) => {
-                buf_data.write_all(&buf[..n]).await.unwrap();
-                buf_data.flush().await.unwrap();
+                buf_data.write_all(&buf[..n]).await?;
 
                 total_read += n;
 
-                if total_read == size as usize {
+                if total_read == size {
+                    buf_data.flush().await?;
+
                     return Ok(data);
                 }
-            }
-            Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
-                continue;
+
+                // TODO: handle the case where the data is bigger than expected
             }
             Err(e) => {
-                eprintln!("failed to read from socket; err = {:?}", e);
+                log::error!("failed to read from socket; err = {:?}", e);
+
                 return Err(e);
             }
         };

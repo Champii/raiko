@@ -8,7 +8,7 @@ use sp1_core::{
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PartialProofRequestData {
+pub struct PartialProofRequest {
     pub checkpoint_id: usize,
     pub checkpoint_data: ExecutionState,
     pub challenger: DuplexChallenger<Val, Perm, 16, 8>,
