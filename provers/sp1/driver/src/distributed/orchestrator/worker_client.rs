@@ -56,6 +56,8 @@ impl WorkerClient {
                     e,
                 );
 
+                self.answer.send((i, Err(e))).await.unwrap();
+
                 return;
             }
 
