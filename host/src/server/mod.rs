@@ -5,7 +5,7 @@ use tokio::{
     io::AsyncWriteExt,
     net::{TcpListener, TcpStream},
 };
-use tracing::info;
+use tracing::{error, info, warn};
 
 pub mod api;
 
@@ -20,28 +20,48 @@ async fn process_worker_socket(mut socket: TcpStream) {
             socket.write_all(&data).await.unwrap();
         }
         Err(e) => {
-            eprintln!("Error: {:?}", e);
+            error!("Error while processing worker request: {:?}", e);
         }
     }
 }
 
-pub async fn listen_worker() {
-    let listener = TcpListener::bind("0.0.0.0:8081").await.unwrap();
+pub async fn listen_worker(state: ProverState) {
+    info!(
+        "Listening as a SP1 worker on: {}",
+        state.opts.worker_address
+    );
+
+    let listener = TcpListener::bind(state.opts.worker_address).await.unwrap();
 
     loop {
         let (socket, addr) = listener.accept().await.unwrap();
 
-        if !addr.ip().to_string().starts_with("10.200") {
-            continue;
+        if let Some(orchestrator_address) = &state.opts.orchestrator_address {
+            if addr.ip().to_string() != *orchestrator_address {
+                warn!("Unauthorized worker connection from: {}", addr);
+
+                continue;
+            }
         }
 
-        tokio::spawn(process_worker_socket(socket));
+        info!(
+            "Receiving SP1 worker task connected from orchestrator: {}",
+            addr
+        );
+
+        // We purposely don't spawn the task here, as we want to block to limit the number
+        // of concurrent connections to one.
+        process_worker_socket(socket).await;
     }
 }
 
 /// Starts the proverd server.
 pub async fn serve(state: ProverState) -> anyhow::Result<()> {
-    tokio::spawn(listen_worker());
+    if state.opts.orchestrator_address.is_some() {
+        info!("Worker mode enabled");
+
+        tokio::spawn(listen_worker(state.clone()));
+    }
 
     let addr = SocketAddr::from_str(&state.opts.address)
         .map_err(|_| HostError::InvalidAddress(state.opts.address.clone()))?;
