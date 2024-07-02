@@ -1,38 +1,41 @@
 use crate::ProverState;
+use raiko_lib::prover::{ProverError, WorkerError};
 use sp1_driver::{PartialProofRequest, WorkerProtocol, WorkerSocket};
 use tokio::net::TcpListener;
 use tracing::{error, info, warn};
 
-async fn handle_worker_socket(mut socket: WorkerSocket) {
-    let protocol = socket.receive().await.unwrap();
+async fn handle_worker_socket(mut socket: WorkerSocket) -> Result<(), ProverError> {
+    let protocol = socket.receive().await?;
 
     info!("Received request: {}", protocol);
 
     match protocol {
         WorkerProtocol::Ping => {
-            socket.send(WorkerProtocol::Ping).await.unwrap();
+            socket.send(WorkerProtocol::Ping).await?;
         }
         WorkerProtocol::PartialProofRequest(data) => {
-            process_partial_proof_request(socket, data).await;
+            process_partial_proof_request(socket, data).await?;
         }
-        _ => {
-            error!("Invalid request: {:?}", protocol);
-        }
+        _ => Err(WorkerError::InvalidRequest)?,
     }
+
+    Ok(())
 }
 
-async fn process_partial_proof_request(mut socket: WorkerSocket, data: PartialProofRequest) {
+async fn process_partial_proof_request(
+    mut socket: WorkerSocket,
+    data: PartialProofRequest,
+) -> Result<(), ProverError> {
     let result = sp1_driver::Sp1DistributedProver::run_as_worker(data).await;
 
     match result {
-        Ok(data) => {
-            socket
-                .send(WorkerProtocol::PartialProofResponse(data))
-                .await
-                .unwrap();
-        }
+        Ok(data) => Ok(socket
+            .send(WorkerProtocol::PartialProofResponse(data))
+            .await?),
         Err(e) => {
             error!("Error while processing worker request: {:?}", e);
+
+            Err(e)
         }
     }
 }
@@ -46,7 +49,11 @@ async fn listen_worker(state: ProverState) {
     let listener = TcpListener::bind(state.opts.worker_address).await.unwrap();
 
     loop {
-        let (socket, addr) = listener.accept().await.unwrap();
+        let Ok((socket, addr)) = listener.accept().await else {
+            error!("Error while accepting connection from orchestrator: Closing socket");
+
+            return;
+        };
 
         if let Some(orchestrator_address) = &state.opts.orchestrator_address {
             if addr.ip().to_string() != *orchestrator_address {
@@ -60,7 +67,10 @@ async fn listen_worker(state: ProverState) {
 
         // We purposely don't spawn the task here, as we want to block to limit the number
         // of concurrent connections to one.
-        handle_worker_socket(WorkerSocket::new(socket)).await;
+
+        if let Err(e) = handle_worker_socket(WorkerSocket::new(socket)).await {
+            error!("Error while handling worker socket: {:?}", e);
+        }
     }
 }
 

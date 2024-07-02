@@ -50,6 +50,8 @@ pub enum WorkerError {
     Serde(#[from] bincode::Error),
     #[error("Worker invalid magic number")]
     InvalidMagicNumber,
+    #[error("Worker invalid request")]
+    InvalidRequest,
     #[error("Worker invalid response")]
     InvalidResponse,
 }
