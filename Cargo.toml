@@ -54,9 +54,19 @@ risc0-build = { version = "0.21.0" }
 risc0-binfmt = { version = "0.21.0" }
 
 # SP1
-sp1-sdk = { git = "https://github.com/succinctlabs/sp1.git", branch = "main" }
-sp1-zkvm = { git = "https://github.com/succinctlabs/sp1.git", branch = "main" }
-sp1-helper = { git = "https://github.com/succinctlabs/sp1.git", branch = "main" }
+sp1-sdk = { git = "https://github.com/succinctlabs/sp1.git", rev = "14eb569d41d24721ffbd407d6060e202482d659c" }
+sp1-zkvm = { git = "https://github.com/succinctlabs/sp1.git", rev = "14eb569d41d24721ffbd407d6060e202482d659c" }
+sp1-helper = { git = "https://github.com/succinctlabs/sp1.git", rev = "14eb569d41d24721ffbd407d6060e202482d659c" }
+sp1-core = { git = "https://github.com/succinctlabs/sp1.git", rev = "14eb569d41d24721ffbd407d6060e202482d659c" }
+
+
+# Plonky3
+p3-field = { git = "https://github.com/Plonky3/Plonky3.git", rev = "88ea2b866e41329817e4761429b4a5a2a9751c07" }
+p3-challenger = { git = "https://github.com/Plonky3/Plonky3.git", rev = "88ea2b866e41329817e4761429b4a5a2a9751c07" }
+p3-poseidon2 = { git = "https://github.com/Plonky3/Plonky3.git", rev = "88ea2b866e41329817e4761429b4a5a2a9751c07" }
+p3-baby-bear = { git = "https://github.com/Plonky3/Plonky3.git", rev = "88ea2b866e41329817e4761429b4a5a2a9751c07" }
+p3-symmetric = { git = "https://github.com/Plonky3/Plonky3.git", rev = "88ea2b866e41329817e4761429b4a5a2a9751c07" }
+
 
 # alloy
 alloy-rlp = { version = "0.3.4", default-features = false }
@@ -139,6 +149,7 @@ hyper = { version = "0.14.27", features = ["server"] }
 reqwest = { version = "0.11.22", features = ["json"] }
 url = "2.5.0"
 async-trait = "0.1.80"
+async-channel = "2.3.1"
 
 # crypto
 kzg = { package = "rust-kzg-zkcrypto", git = "https://github.com/brechtpd/rust-kzg.git", branch = "sp1-patch", default-features = false }
@@ -188,3 +199,12 @@ revm-primitives = { git = "https://github.com/taikoxyz/revm.git", branch = "v36-
 revm-precompile = { git = "https://github.com/taikoxyz/revm.git", branch = "v36-taiko" }
 secp256k1 = { git = "https://github.com/CeciliaZ030/rust-secp256k1", branch = "sp1-patch" }
 blst = { git = "https://github.com/CeciliaZ030/blst.git", branch = "v0.3.12-serialize" }
+
+# Patch Plonky3 for Serialize and Deserialize of DuplexChallenger
+[patch."https://github.com/Plonky3/Plonky3.git"]
+p3-field = { git = "https://github.com/Champii/Plonky3.git", branch = "serde_patch" }
+p3-challenger = { git = "https://github.com/Champii/Plonky3.git", branch = "serde_patch" }
+p3-poseidon2 = { git = "https://github.com/Champii/Plonky3.git", branch = "serde_patch" }
+p3-baby-bear = { git = "https://github.com/Champii/Plonky3.git", branch = "serde_patch" }
+p3-symmetric = { git = "https://github.com/Champii/Plonky3.git", branch = "serde_patch" }
+
