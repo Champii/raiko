@@ -5,9 +5,9 @@ use serde::{Deserialize, Serialize};
 mod distributed;
 mod local;
 
-pub use distributed::read_data;
-pub use distributed::Sp1DistributedProver;
-pub use distributed::{WorkerEnvelope, WorkerProtocol, WorkerSocket};
+pub use distributed::{
+    PartialProofRequest, Sp1DistributedProver, WorkerEnvelope, WorkerProtocol, WorkerSocket,
+};
 
 pub use local::Sp1Prover;
 

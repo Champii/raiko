@@ -2,12 +2,12 @@ use std::env;
 
 use raiko_lib::{
     input::{GuestInput, GuestOutput},
-    prover::{to_proof, Proof, Prover, ProverConfig, ProverResult},
+    prover::{to_proof, Proof, Prover, ProverConfig, ProverResult, WorkerError},
 };
 use serde::{Deserialize, Serialize};
 use sp1_core::{runtime::Program, stark::ShardProof, utils::BabyBearPoseidon2};
 use sp1_sdk::{ProverClient, SP1ProofWithPublicValues, SP1Stdin};
-use tokio::io::AsyncWriteExt;
+use tokio::io::{AsyncReadExt, AsyncWriteExt, BufWriter};
 
 use crate::{
     distributed::{
@@ -96,10 +96,9 @@ impl Sp1DistributedProver {
         })
     }
 
-    pub async fn run_as_worker(partial_proof_request_data: &[u8]) -> ProverResult<Vec<u8>> {
-        let partial_proof_request: PartialProofRequest =
-            bincode::deserialize(partial_proof_request_data).unwrap();
-
+    pub async fn run_as_worker(
+        partial_proof_request: PartialProofRequest,
+    ) -> ProverResult<Vec<ShardProof<BabyBearPoseidon2>>> {
         println!(
             "Running SP1 Distributed worker: Prove shard nb {}",
             partial_proof_request.checkpoint_id
@@ -107,9 +106,7 @@ impl Sp1DistributedProver {
 
         let partial_proof = prove_partial(&partial_proof_request);
 
-        let serialized_proof = bincode::serialize(&partial_proof).unwrap();
-
-        Ok(serialized_proof)
+        Ok(partial_proof)
     }
 
     async fn read_and_validate_worker_ip_list() -> Vec<String> {
@@ -124,27 +121,28 @@ impl Sp1DistributedProver {
 
         // try to connect to each worker to make sure they are reachable
         for ip in &ip_list {
-            let connection_result = tokio::net::TcpStream::connect(ip).await;
+            let Ok(mut socket) = WorkerSocket::connect(ip).await else {
+                log::error!("Sp1 Distributed: Worker at {} is not reachable. Removing from the list for this task", ip);
 
-            match connection_result {
-                Err(_) => {
-                    log::error!("Sp1 Distributed: Worker at {} is unreachable. Removing from the list for this task", ip);
-                }
-                Ok(mut socket) => {
-                    let ping_message: WorkerEnvelope = WorkerProtocol::Ping.into();
-                    let data = bincode::serialize(&ping_message).unwrap();
+                continue;
+            };
 
-                    socket.write_u64(data.len() as u64).await.unwrap();
-                    socket.write_all(&data).await.unwrap();
+            if let Err(_) = socket.send(WorkerProtocol::Ping).await {
+                log::error!("Sp1 Distributed: Worker at {} is not reachable. Removing from the list for this task", ip);
 
-                    let response = crate::read_data(&mut socket).await.unwrap();
+                continue;
+            }
 
-                    if response != data {
-                        log::error!("Sp1 Distributed: Worker at {} is not a valid SP1 worker. Removing from the list for this task", ip);
-                    } else {
-                        reachable_ip_list.push(ip.clone());
-                    }
-                }
+            let Ok(response) = socket.receive().await else {
+                log::error!("Sp1 Distributed: Worker at {} is not a valid SP1 worker. Removing from the list for this task", ip);
+
+                continue;
+            };
+
+            if let WorkerProtocol::Ping = response {
+                reachable_ip_list.push(ip.clone());
+            } else {
+                log::error!("Sp1 Distributed: Worker at {} is not a valid SP1 worker. Removing from the list for this task", ip);
             }
         }
 
@@ -161,7 +159,8 @@ pub struct WorkerEnvelope {
 #[derive(Debug, Serialize, Deserialize)]
 pub enum WorkerProtocol {
     Ping,
-    PartialProofRequest(Vec<u8>),
+    PartialProofRequest(PartialProofRequest),
+    PartialProofResponse(Vec<ShardProof<BabyBearPoseidon2>>),
 }
 
 impl From<WorkerProtocol> for WorkerEnvelope {
@@ -178,7 +177,13 @@ pub struct WorkerSocket {
 }
 
 impl WorkerSocket {
-    pub async fn new(socket: tokio::net::TcpStream) -> Self {
+    pub async fn connect(url: &str) -> Result<Self, WorkerError> {
+        let stream = tokio::net::TcpStream::connect(url).await?;
+
+        Ok(WorkerSocket { socket: stream })
+    }
+
+    pub fn new(socket: tokio::net::TcpStream) -> Self {
         WorkerSocket { socket }
     }
 
@@ -216,7 +221,7 @@ impl WorkerSocket {
         let mut total_read = 0;
 
         loop {
-            match socket.read(&mut buf).await {
+            match self.socket.read(&mut buf).await {
                 // socket closed
                 Ok(n) if n == 0 => return Ok(data),
                 Ok(n) => {

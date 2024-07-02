@@ -1,12 +1,10 @@
 use async_channel::{Receiver, Sender};
 use raiko_lib::prover::WorkerError;
 use sp1_core::{runtime::ExecutionState, stark::ShardProof, utils::BabyBearPoseidon2};
-use tokio::{
-    io::{AsyncReadExt, AsyncWriteExt, BufWriter},
-    net::TcpStream,
-};
 
-use crate::distributed::partial_proof_request::PartialProofRequest;
+use crate::{
+    distributed::partial_proof_request::PartialProofRequest, WorkerProtocol, WorkerSocket,
+};
 
 pub struct WorkerClient {
     /// The id of the worker
@@ -72,7 +70,7 @@ impl WorkerClient {
         i: usize,
         checkpoint: ExecutionState,
     ) -> Result<Vec<ShardProof<BabyBearPoseidon2>>, WorkerError> {
-        let mut stream = TcpStream::connect(&self.url).await?;
+        let mut socket = WorkerSocket::connect(&self.url).await?;
 
         log::info!(
             "Sending checkpoint {} to worker {} at {}",
@@ -86,55 +84,16 @@ impl WorkerClient {
         request.checkpoint_id = i;
         request.checkpoint_data = checkpoint;
 
-        let data = bincode::serialize(&request)?;
+        socket
+            .send(WorkerProtocol::PartialProofRequest(request))
+            .await?;
 
-        stream.write_u64(data.len() as u64).await?;
-        stream.flush().await?;
+        let response = socket.receive().await?;
 
-        stream.write_all(&data).await?;
-        stream.flush().await?;
-
-        let response = read_data(&mut stream).await?;
-
-        let partial_proofs = bincode::deserialize(&response)?;
-
-        Ok(partial_proofs)
-    }
-}
-
-// FIXME: This shouldnt be here
-pub async fn read_data(socket: &mut TcpStream) -> Result<Vec<u8>, std::io::Error> {
-    // TODO: limit the size of the data
-    let size = socket.read_u64().await? as usize;
-
-    let mut data = Vec::new();
-
-    let mut buf_data = BufWriter::new(&mut data);
-    let mut buf = [0; 1024];
-    let mut total_read = 0;
-
-    loop {
-        match socket.read(&mut buf).await {
-            // socket closed
-            Ok(n) if n == 0 => return Ok(data),
-            Ok(n) => {
-                buf_data.write_all(&buf[..n]).await?;
-
-                total_read += n;
-
-                if total_read == size {
-                    buf_data.flush().await?;
-
-                    return Ok(data);
-                }
-
-                // TODO: handle the case where the data is bigger than expected
-            }
-            Err(e) => {
-                log::error!("failed to read from socket; err = {:?}", e);
-
-                return Err(e);
-            }
-        };
+        if let WorkerProtocol::PartialProofResponse(partial_proofs) = response {
+            Ok(partial_proofs)
+        } else {
+            Err(WorkerError::InvalidResponse)
+        }
     }
 }

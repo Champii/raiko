@@ -3,6 +3,6 @@ mod partial_proof_request;
 mod prover;
 mod sp1_specifics;
 
-pub use orchestrator::read_data;
+pub use partial_proof_request::PartialProofRequest;
 pub use prover::Sp1DistributedProver;
 pub use prover::{WorkerEnvelope, WorkerProtocol, WorkerSocket};

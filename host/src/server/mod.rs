@@ -1,45 +1,37 @@
 use crate::{interfaces::HostError, server::api::create_router, ProverState};
 use anyhow::Context;
-use sp1_driver::{WorkerEnvelope, WorkerProtocol};
+use sp1_driver::{PartialProofRequest, WorkerProtocol, WorkerSocket};
 use std::{net::SocketAddr, str::FromStr};
-use tokio::{
-    io::AsyncWriteExt,
-    net::{TcpListener, TcpStream},
-};
+use tokio::net::TcpListener;
 use tracing::{error, info, warn};
 
 pub mod api;
 
 async fn handle_worker_socket(mut socket: WorkerSocket) {
-    let data = socket.receive().await.unwrap();
+    let protocol = socket.receive().await.unwrap();
 
-    let envelope: WorkerEnvelope = bincode::deserialize(&data).unwrap();
-
-    // FIXME: Put the magic number in the CliOpts
-    if envelope.magic != 0xdeadbeef {
-        error!("Invalid magic number");
-
-        return;
-    }
-
-    match envelope.data {
+    match protocol {
         WorkerProtocol::Ping => {
-            socket.write_u64(data.len() as u64).await.unwrap();
-            socket.write_all(&data).await.unwrap();
+            socket.send(WorkerProtocol::Ping).await.unwrap();
         }
         WorkerProtocol::PartialProofRequest(data) => {
             process_partial_proof_request(socket, data).await;
         }
+        _ => {
+            error!("Invalid request: {:?}", protocol);
+        }
     }
 }
 
-async fn process_partial_proof_request(mut socket: TcpStream, data: Vec<u8>) {
-    let result = sp1_driver::Sp1DistributedProver::run_as_worker(&data).await;
+async fn process_partial_proof_request(mut socket: WorkerSocket, data: PartialProofRequest) {
+    let result = sp1_driver::Sp1DistributedProver::run_as_worker(data).await;
 
     match result {
         Ok(data) => {
-            socket.write_u64(data.len() as u64).await.unwrap();
-            socket.write_all(&data).await.unwrap();
+            socket
+                .send(WorkerProtocol::PartialProofResponse(data))
+                .await
+                .unwrap();
         }
         Err(e) => {
             error!("Error while processing worker request: {:?}", e);
