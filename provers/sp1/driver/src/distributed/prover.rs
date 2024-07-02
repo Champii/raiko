@@ -1,4 +1,7 @@
-use std::env;
+use std::{
+    env,
+    fmt::{Display, Formatter},
+};
 
 use raiko_lib::{
     input::{GuestInput, GuestOutput},
@@ -25,7 +28,7 @@ impl Prover for Sp1DistributedProver {
         _output: &GuestOutput,
         _config: &ProverConfig,
     ) -> ProverResult<Proof> {
-        println!("Running SP1 Distributed orchestrator");
+        log::info!("Running SP1 Distributed orchestrator");
 
         let now = std::time::Instant::now();
 
@@ -74,12 +77,10 @@ impl Sp1DistributedProver {
     ) -> ProverResult<SP1ProofWithPublicValues<Vec<ShardProof<BabyBearPoseidon2>>>> {
         let program = Program::from(ELF);
 
-        let worker_ip_list = Self::read_and_validate_worker_ip_list().await;
+        let worker_ip_list = Self::read_and_validate_worker_ip_list().await?;
 
         let (checkpoints, public_values_stream, partial_proof_request) =
             commit(program, &stdin, worker_ip_list.len()).unwrap();
-
-        log::info!("Number of checkpoints: {}", checkpoints.len());
 
         let proofs = super::orchestrator::distribute_work(
             worker_ip_list,
@@ -99,7 +100,7 @@ impl Sp1DistributedProver {
     pub async fn run_as_worker(
         partial_proof_request: PartialProofRequest,
     ) -> ProverResult<Vec<ShardProof<BabyBearPoseidon2>>> {
-        println!(
+        log::debug!(
             "Running SP1 Distributed worker: Prove shard nb {}",
             partial_proof_request.checkpoint_id
         );
@@ -109,7 +110,7 @@ impl Sp1DistributedProver {
         Ok(partial_proof)
     }
 
-    async fn read_and_validate_worker_ip_list() -> Vec<String> {
+    async fn read_and_validate_worker_ip_list() -> Result<Vec<String>, WorkerError> {
         let ip_list_string = std::fs::read_to_string("distributed.json")
             .expect("Sp1 Distributed: Need a `distributed.json` file with a list of IP:PORT");
 
@@ -122,19 +123,19 @@ impl Sp1DistributedProver {
         // try to connect to each worker to make sure they are reachable
         for ip in &ip_list {
             let Ok(mut socket) = WorkerSocket::connect(ip).await else {
-                log::error!("Sp1 Distributed: Worker at {} is not reachable. Removing from the list for this task", ip);
+                log::warn!("Sp1 Distributed: Worker at {} is not reachable. Removing from the list for this task", ip);
 
                 continue;
             };
 
             if let Err(_) = socket.send(WorkerProtocol::Ping).await {
-                log::error!("Sp1 Distributed: Worker at {} is not reachable. Removing from the list for this task", ip);
+                log::warn!("Sp1 Distributed: Worker at {} is not reachable. Removing from the list for this task", ip);
 
                 continue;
             }
 
             let Ok(response) = socket.receive().await else {
-                log::error!("Sp1 Distributed: Worker at {} is not a valid SP1 worker. Removing from the list for this task", ip);
+                log::warn!("Sp1 Distributed: Worker at {} is not a valid SP1 worker. Removing from the list for this task", ip);
 
                 continue;
             };
@@ -142,11 +143,17 @@ impl Sp1DistributedProver {
             if let WorkerProtocol::Ping = response {
                 reachable_ip_list.push(ip.clone());
             } else {
-                log::error!("Sp1 Distributed: Worker at {} is not a valid SP1 worker. Removing from the list for this task", ip);
+                log::warn!("Sp1 Distributed: Worker at {} is not a valid SP1 worker. Removing from the list for this task", ip);
             }
         }
 
-        reachable_ip_list
+        if reachable_ip_list.is_empty() {
+            log::error!("Sp1 Distributed: No reachable workers found. Aborting...");
+
+            return Err(WorkerError::AllWorkersFailed);
+        }
+
+        Ok(reachable_ip_list)
     }
 }
 
@@ -161,6 +168,16 @@ pub enum WorkerProtocol {
     Ping,
     PartialProofRequest(PartialProofRequest),
     PartialProofResponse(Vec<ShardProof<BabyBearPoseidon2>>),
+}
+
+impl Display for WorkerProtocol {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            WorkerProtocol::Ping => write!(f, "Ping"),
+            WorkerProtocol::PartialProofRequest(_) => write!(f, "PartialProofRequest"),
+            WorkerProtocol::PartialProofResponse(_) => write!(f, "PartialProofResponse"),
+        }
+    }
 }
 
 impl From<WorkerProtocol> for WorkerEnvelope {
@@ -210,6 +227,7 @@ impl WorkerSocket {
         Ok(envelope.data)
     }
 
+    // TODO: Add a timeout
     pub async fn read_data(&mut self) -> Result<Vec<u8>, std::io::Error> {
         // TODO: limit the size of the data
         let size = self.socket.read_u64().await? as usize;
