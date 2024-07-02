@@ -25,6 +25,7 @@ mod test {
 
     #[test]
     fn run_unittest_elf() {
+        // TODO(Cecilia): imple GuestInput::mock() for unit test
         let client = ProverClient::new();
         let stdin = SP1Stdin::new();
         let (pk, vk) = client.setup(TEST_ELF);
