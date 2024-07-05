@@ -1,16 +1,29 @@
 use std::fmt::{Display, Formatter};
 
 use serde::{Deserialize, Serialize};
-use sp1_core::{stark::ShardProof, utils::BabyBearPoseidon2};
+use sp1_core::{air::PublicValues, stark::ShardProof, utils::BabyBearPoseidon2};
 
-use crate::PartialProofRequest;
+use super::pool::{WorkerRequest, WorkerResponse};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub enum WorkerProtocol {
     Ping,
     Pong,
-    PartialProofRequest(PartialProofRequest),
-    PartialProofResponse(Vec<ShardProof<BabyBearPoseidon2>>),
+
+    Request(WorkerRequest),
+    Response(WorkerResponse),
+}
+
+impl From<WorkerRequest> for WorkerProtocol {
+    fn from(req: WorkerRequest) -> Self {
+        WorkerProtocol::Request(req)
+    }
+}
+
+impl From<WorkerResponse> for WorkerProtocol {
+    fn from(res: WorkerResponse) -> Self {
+        WorkerProtocol::Response(res)
+    }
 }
 
 impl Display for WorkerProtocol {
@@ -18,8 +31,8 @@ impl Display for WorkerProtocol {
         match self {
             WorkerProtocol::Ping => write!(f, "Ping"),
             WorkerProtocol::Pong => write!(f, "Pong"),
-            WorkerProtocol::PartialProofRequest(_) => write!(f, "PartialProofRequest"),
-            WorkerProtocol::PartialProofResponse(_) => write!(f, "PartialProofResponse"),
+            WorkerProtocol::Request(req) => write!(f, "Request({})", req),
+            WorkerProtocol::Response(res) => write!(f, "Response({})", res),
         }
     }
 }

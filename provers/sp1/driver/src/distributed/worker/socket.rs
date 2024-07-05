@@ -2,7 +2,9 @@ use raiko_lib::prover::WorkerError;
 use sp1_core::{stark::ShardProof, utils::BabyBearPoseidon2};
 use tokio::io::{AsyncReadExt, AsyncWriteExt, BufWriter};
 
-use crate::{PartialProofRequest, WorkerEnvelope, WorkerProtocol};
+use crate::{WorkerEnvelope, WorkerProtocol};
+
+use super::pool::{WorkerRequest, WorkerResponse};
 
 // 64MB
 const PAYLOAD_MAX_SIZE: usize = 1 << 26;
@@ -107,7 +109,7 @@ impl WorkerSocket {
         }
     }
 
-    pub async fn partial_proof_request(
+    /* pub async fn partial_proof_request(
         &mut self,
         request: PartialProofRequest,
     ) -> Result<Vec<ShardProof<BabyBearPoseidon2>>, WorkerError> {
@@ -120,6 +122,17 @@ impl WorkerSocket {
             Ok(partial_proofs)
         } else {
             Err(WorkerError::InvalidResponse)
+        }
+    } */
+
+    pub async fn request(&mut self, request: WorkerRequest) -> Result<WorkerResponse, WorkerError> {
+        self.send(request.into()).await?;
+
+        let response = self.receive().await?;
+
+        match response {
+            WorkerProtocol::Response(response) => Ok(response),
+            _ => Err(WorkerError::InvalidResponse),
         }
     }
 }

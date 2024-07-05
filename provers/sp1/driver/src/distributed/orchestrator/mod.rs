@@ -1,12 +1,10 @@
-mod worker_client;
-
-use raiko_lib::prover::WorkerError;
+/* use raiko_lib::prover::WorkerError;
 use sp1_core::{runtime::ExecutionState, stark::ShardProof, utils::BabyBearPoseidon2};
 use worker_client::WorkerClient;
 
-use super::partial_proof_request::PartialProofRequest;
+use super::partial_proof_request::PartialProofRequest; */
 
-pub async fn distribute_work(
+/* pub async fn distribute_work(
     ip_list: Vec<String>,
     checkpoints: Vec<ExecutionState>,
     partial_proof_request: PartialProofRequest,
@@ -76,4 +74,4 @@ pub async fn distribute_work(
         .collect();
 
     Ok(proofs)
-}
+} */

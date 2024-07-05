@@ -6,7 +6,9 @@ mod distributed;
 mod local;
 
 pub use distributed::{
-    PartialProofRequest, Sp1DistributedProver, WorkerEnvelope, WorkerProtocol, WorkerSocket,
+    sp1_specifics::{self, ExecutionRecord, PublicValues},
+    Sp1DistributedProver, WorkerEnvelope, WorkerPool, WorkerProtocol, WorkerRequest,
+    WorkerResponse, WorkerSocket,
 };
 
 pub use local::Sp1Prover;
