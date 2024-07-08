@@ -108,22 +108,6 @@ impl WorkerSocket {
         }
     }
 
-    /* pub async fn partial_proof_request(
-        &mut self,
-        request: PartialProofRequest,
-    ) -> Result<Vec<ShardProof<BabyBearPoseidon2>>, WorkerError> {
-        self.send(WorkerProtocol::PartialProofRequest(request))
-            .await?;
-
-        let response = self.receive().await?;
-
-        if let WorkerProtocol::PartialProofResponse(partial_proofs) = response {
-            Ok(partial_proofs)
-        } else {
-            Err(WorkerError::InvalidResponse)
-        }
-    } */
-
     pub async fn request(&mut self, request: WorkerRequest) -> Result<WorkerResponse, WorkerError> {
         self.send(request.into()).await?;
 
