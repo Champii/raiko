@@ -38,6 +38,7 @@ pub fn compute_checkpoints(
     stdin: &SP1Stdin,
     nb_workers: usize,
 ) -> Result<(Vec<Checkpoint>, Vec<u8>, PublicValues<u32, u32>, usize), SP1CoreProverError> {
+    log::info!("Computing checkpoints");
     let mut opts = SP1CoreOpts::default();
 
     // FIXME: Is this the most efficient ?
@@ -101,6 +102,8 @@ pub fn commit(
     public_values: PublicValues<u32, u32>,
     shard_batch_size: usize,
 ) -> Result<(Shards, Commitments), WorkerError> {
+    log::info!("Commiting checkpoint");
+
     let config = CoreSC::default();
     let sharding_config = ShardingConfig::default();
     let mut opts = SP1CoreOpts::default();
@@ -116,7 +119,7 @@ pub fn commit(
 
     let checkpoint_shards =
         tracing::info_span!("shard").in_scope(|| machine.shard(record, &sharding_config));
-    //
+
     // Commit to each shard.
     let (commitments, _commit_data) = tracing::info_span!("commit")
         .in_scope(|| LocalProver::commit_shards(&machine, &checkpoint_shards, opts));
@@ -125,6 +128,8 @@ pub fn commit(
 }
 
 pub fn prove(shards: Shards, challenger: Challenger) -> Result<PartialProof, WorkerError> {
+    log::info!("Proving shards");
+
     let config = CoreSC::default();
 
     let program = Program::from(ELF);
@@ -178,6 +183,8 @@ pub fn observe_commitments(
     commitments: Commitments,
     public_values: PublicValues<u32, u32>,
 ) -> Challenger {
+    log::info!("Observing commitments");
+
     let public_values: Vec<Val> = public_values.to_vec();
 
     let config = CoreSC::default();

@@ -1,13 +1,17 @@
-use std::fmt::{Display, Formatter};
+use std::{
+    fmt::{Display, Formatter},
+    sync::Arc,
+};
 
-use async_channel::{Receiver, Sender};
 use raiko_lib::prover::WorkerError;
 use serde::{Deserialize, Serialize};
 use sp1_core::air::PublicValues;
+use tokio::sync::RwLock;
 
-use crate::sp1_specifics::{Challenger, Checkpoint, Commitments, PartialProof};
-
-use super::WorkerClient;
+use crate::{
+    sp1_specifics::{Challenger, Checkpoint, Commitments, PartialProof},
+    WorkerSocket,
+};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum WorkerRequest {
@@ -42,27 +46,18 @@ impl Display for WorkerResponse {
 }
 
 pub struct WorkerPool {
-    nb_workers: usize,
-    request_tx: Sender<(usize, WorkerRequest)>,
-    answer_rx: Receiver<(usize, Result<WorkerResponse, WorkerError>)>,
+    workers: Vec<Arc<RwLock<WorkerSocket>>>,
 }
 
 impl WorkerPool {
     pub async fn new() -> Result<Self, WorkerError> {
-        let (request_tx, request_rx) = async_channel::unbounded();
-        let (answer_tx, answer_rx) = async_channel::unbounded();
+        let workers = Self::spawn_workers().await?;
 
-        let nb_workers = Self::spawn_workers(request_rx, answer_tx).await?;
-
-        Ok(Self {
-            nb_workers,
-            request_tx,
-            answer_rx,
-        })
+        Ok(Self { workers })
     }
 
     pub async fn commit(
-        &self,
+        &mut self,
         checkpoints: Vec<Checkpoint>,
         public_values: PublicValues<u32, u32>,
         shard_batch_size: usize,
@@ -89,8 +84,8 @@ impl WorkerPool {
         Ok(commitments)
     }
 
-    pub async fn prove(&self, challenger: Challenger) -> Result<PartialProof, WorkerError> {
-        let requests = (0..self.nb_workers)
+    pub async fn prove(&mut self, challenger: Challenger) -> Result<PartialProof, WorkerError> {
+        let requests = (0..self.workers.len())
             .map(|_| WorkerRequest::Prove(challenger.clone()))
             .collect();
 
@@ -110,44 +105,37 @@ impl WorkerPool {
     }
 
     async fn distribute_work(
-        &self,
+        &mut self,
         requests: Vec<WorkerRequest>,
     ) -> Result<Vec<WorkerResponse>, WorkerError> {
-        for (i, request) in requests.iter().enumerate() {
-            self.request_tx.send((i, request.clone())).await.unwrap();
+        use tokio::task::JoinSet;
+
+        let mut set = JoinSet::new();
+
+        for (request, worker) in requests.into_iter().zip(self.workers.iter()) {
+            let worker = Arc::clone(worker);
+            set.spawn(async move { worker.write().await.request(request).await });
         }
 
         let mut results = Vec::new();
 
-        // Get the partial proofs from the workers
-        loop {
-            let (checkpoint_id, result) = self.answer_rx.recv().await.unwrap();
+        while let Some(res) = set.join_next().await {
+            let out = res.map_err(|_e| WorkerError::AllWorkersFailed)?;
 
-            match result {
+            match out {
                 Ok(response) => {
-                    results.push((checkpoint_id as usize, response));
+                    results.push(response);
                 }
                 Err(_e) => {
                     return Err(WorkerError::AllWorkersFailed);
                 }
             }
-
-            if results.len() == self.nb_workers {
-                break;
-            }
         }
-
-        results.sort_by_key(|(checkpoint_id, _)| *checkpoint_id);
-
-        let results = results.into_iter().map(|(_, proof)| proof).collect();
 
         Ok(results)
     }
 
-    async fn spawn_workers(
-        request_rx: Receiver<(usize, WorkerRequest)>,
-        answer_tx: Sender<(usize, Result<WorkerResponse, WorkerError>)>,
-    ) -> Result<usize, WorkerError> {
+    async fn spawn_workers() -> Result<Vec<Arc<RwLock<WorkerSocket>>>, WorkerError> {
         let ip_list_string = std::fs::read_to_string("distributed.json")
             .expect("Sp1 Distributed: Need a `distributed.json` file with a list of IP:PORT");
 
@@ -155,41 +143,35 @@ impl WorkerPool {
             "Sp1 Distributed: Invalid JSON for `distributed.json`. need an array of IP:PORT",
         );
 
-        let mut nb_workers = 0;
+        let mut workers = Vec::new();
 
         // try to connect to each worker to make sure they are reachable
-        for (i, ip) in ip_list.into_iter().enumerate() {
-            let Ok(mut worker) =
-                WorkerClient::new(i, ip.clone(), request_rx.clone(), answer_tx.clone()).await
-            else {
+        for ip in ip_list.into_iter() {
+            let Ok(mut worker) = WorkerSocket::connect(&ip).await else {
                 log::warn!("Sp1 Distributed: Worker at {} is not reachable. Removing from the list for this task", ip);
 
                 continue;
             };
 
-            if let Err(_) = worker.ping().await {
-                log::warn!("Sp1 Distributed: Worker at {} is not sending good response to Ping. Removing from the list for this task", ip);
+            if let Err(_e) = worker.ping().await {
+                log::warn!("Sp1 Distributed: Worker at {} is not reachable. Removing from the list for this task", ip);
 
                 continue;
             }
 
-            tokio::spawn(async move {
-                worker.run().await;
-            });
-
-            nb_workers += 1;
+            workers.push(Arc::new(RwLock::new(worker)));
         }
 
-        if nb_workers == 0 {
+        if workers.len() == 0 {
             log::error!("Sp1 Distributed: No reachable workers found. Aborting...");
 
             return Err(WorkerError::AllWorkersFailed);
         }
 
-        Ok(nb_workers)
+        Ok(workers)
     }
 
     pub fn len(&self) -> usize {
-        self.nb_workers
+        self.workers.len()
     }
 }

@@ -65,7 +65,7 @@ pub struct Sp1DistributedOrchestrator;
 
 impl Sp1DistributedOrchestrator {
     pub async fn prove(stdin: SP1Stdin) -> ProverResult<SP1ProofWithPublicValues<PartialProof>> {
-        let worker_pool = WorkerPool::new().await?;
+        let mut worker_pool = WorkerPool::new().await?;
 
         let (checkpoints, public_values_stream, public_values, shard_batch_size) =
             compute_checkpoints(&stdin, worker_pool.len()).map_err(|e| {

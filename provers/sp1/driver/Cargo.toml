@@ -23,7 +23,6 @@ sha3 = { workspace = true, optional = true, default-features = false}
 
 log = { workspace = true, optional = true }
 tokio = { workspace = true, optional = true }
-async-channel = { workspace = true, optional = true }
 tracing = { workspace = true, optional = true }
 tempfile = { workspace = true, optional = true }
 bincode = { workspace = true, optional = true }
@@ -49,7 +48,6 @@ enable = [
 
     "log",
     "tokio",
-    "async-channel",
     "tracing",
     "tempfile",
     "bincode",
