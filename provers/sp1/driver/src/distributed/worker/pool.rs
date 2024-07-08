@@ -1,27 +1,13 @@
 use std::fmt::{Display, Formatter};
 
 use async_channel::{Receiver, Sender};
-use p3_baby_bear::BabyBear;
-use p3_challenger::DuplexChallenger;
-use p3_symmetric::Hash;
 use raiko_lib::prover::WorkerError;
 use serde::{Deserialize, Serialize};
-use sp1_core::{
-    air::PublicValues,
-    runtime::ExecutionState,
-    stark::ShardProof,
-    utils::{
-        baby_bear_poseidon2::{Perm, Val},
-        BabyBearPoseidon2,
-    },
-};
+use sp1_core::air::PublicValues;
+
+use crate::sp1_specifics::{Challenger, Checkpoint, Commitments, PartialProof};
 
 use super::WorkerClient;
-
-pub type Checkpoint = ExecutionState;
-pub type Commitments = Vec<Hash<Val, Val, 8>>;
-pub type PartialProof = Vec<ShardProof<BabyBearPoseidon2>>;
-pub type Challenger = DuplexChallenger<Val, Perm, 16, 8>;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum WorkerRequest {

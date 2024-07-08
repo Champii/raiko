@@ -1,37 +1,31 @@
-use std::{
-    fs::File,
-    io::{Seek, Write},
-    time::Instant,
-};
+use std::time::Instant;
 
-use p3_baby_bear::BabyBear;
 use p3_challenger::{CanObserve, DuplexChallenger};
+use p3_symmetric::Hash;
 
 use raiko_lib::prover::WorkerError;
+pub use sp1_core::air::PublicValues;
 use sp1_core::{
-    runtime::{ExecutionState, Program, Runtime, ShardingConfig},
-    stark::{LocalProver, MachineRecord, RiscvAir, ShardProof, StarkGenericConfig, StarkMachine},
+    runtime::{ExecutionRecord, ExecutionState, Program, Runtime, ShardingConfig},
+    stark::{LocalProver, MachineRecord, RiscvAir, ShardProof, StarkGenericConfig},
     utils::{
         baby_bear_poseidon2::{Perm, Val},
         BabyBearPoseidon2, SP1CoreOpts, SP1CoreProverError,
     },
 };
 
-pub use sp1_core::air::PublicValues;
-pub use sp1_core::runtime::ExecutionRecord;
-
-use sp1_sdk::CoreSC;
-use sp1_sdk::{SP1PublicValues, SP1Stdin};
+use sp1_sdk::{CoreSC, SP1Stdin};
 
 use crate::ELF;
 
-use super::{Challenger, Checkpoint, Commitments, PartialProof};
+pub type Checkpoint = ExecutionState;
+pub type Shard = ExecutionRecord;
+pub type Shards = Vec<Shard>;
+pub type Commitments = Vec<Hash<Val, Val, 8>>;
+pub type PartialProof = Vec<ShardProof<BabyBearPoseidon2>>;
+pub type Challenger = DuplexChallenger<Val, Perm, 16, 8>;
 
-fn trace_checkpoint(
-    program: Program,
-    checkpoint: Checkpoint,
-    opts: SP1CoreOpts,
-) -> ExecutionRecord {
+fn trace_checkpoint(program: Program, checkpoint: Checkpoint, opts: SP1CoreOpts) -> Shard {
     let mut runtime = Runtime::recover(program, checkpoint, opts);
 
     let (events, _) =
@@ -43,8 +37,7 @@ fn trace_checkpoint(
 pub fn compute_checkpoints(
     stdin: &SP1Stdin,
     nb_workers: usize,
-) -> Result<(Vec<ExecutionState>, Vec<u8>, PublicValues<u32, u32>, usize), SP1CoreProverError> {
-    let config = CoreSC::default();
+) -> Result<(Vec<Checkpoint>, Vec<u8>, PublicValues<u32, u32>, usize), SP1CoreProverError> {
     let mut opts = SP1CoreOpts::default();
 
     // FIXME: Is this the most efficient ?
@@ -107,7 +100,7 @@ pub fn commit(
     checkpoint: Checkpoint,
     public_values: PublicValues<u32, u32>,
     shard_batch_size: usize,
-) -> Result<(Vec<ExecutionRecord>, Commitments), WorkerError> {
+) -> Result<(Shards, Commitments), WorkerError> {
     let config = CoreSC::default();
     let sharding_config = ShardingConfig::default();
     let mut opts = SP1CoreOpts::default();
@@ -120,7 +113,6 @@ pub fn commit(
     record.public_values = public_values;
 
     let machine = RiscvAir::machine(config.clone());
-    let (_pk, vk) = machine.setup(&program);
 
     let checkpoint_shards =
         tracing::info_span!("shard").in_scope(|| machine.shard(record, &sharding_config));
@@ -132,11 +124,7 @@ pub fn commit(
     Ok((checkpoint_shards, commitments))
 }
 
-pub fn prove(
-    shards: Vec<ExecutionRecord>,
-    public_values: PublicValues<u32, u32>,
-    mut challenger: Challenger,
-) -> Result<PartialProof, WorkerError> {
+pub fn prove(shards: Shards, challenger: Challenger) -> Result<PartialProof, WorkerError> {
     let config = CoreSC::default();
 
     let program = Program::from(ELF);
@@ -146,7 +134,7 @@ pub fn prove(
 
     let nb_shards = shards.len();
 
-    let mut proofs = shards
+    let proofs = shards
         .into_iter()
         .enumerate()
         .map(|(i, shard)| {

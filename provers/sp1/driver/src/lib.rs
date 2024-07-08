@@ -6,8 +6,7 @@ mod distributed;
 mod local;
 
 pub use distributed::{
-    sp1_specifics::{self, ExecutionRecord, PublicValues},
-    Sp1DistributedProver, WorkerEnvelope, WorkerPool, WorkerProtocol, WorkerRequest,
+    sp1_specifics, Sp1DistributedProver, WorkerEnvelope, WorkerPool, WorkerProtocol, WorkerRequest,
     WorkerResponse, WorkerSocket,
 };
 

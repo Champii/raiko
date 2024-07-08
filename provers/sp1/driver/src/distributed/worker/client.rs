@@ -1,6 +1,5 @@
 use async_channel::{Receiver, Sender};
 use raiko_lib::prover::WorkerError;
-use sp1_core::{runtime::ExecutionState, stark::ShardProof, utils::BabyBearPoseidon2};
 
 use crate::{WorkerRequest, WorkerResponse, WorkerSocket};
 

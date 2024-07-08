@@ -2,22 +2,13 @@ use std::env;
 
 use raiko_lib::{
     input::{GuestInput, GuestOutput},
-    prover::{to_proof, Proof, Prover, ProverConfig, ProverError, ProverResult, WorkerError},
-};
-use sp1_core::{
-    air::PublicValues,
-    runtime::{ExecutionRecord, ExecutionState, Program},
-    stark::ShardProof,
-    utils::BabyBearPoseidon2,
+    prover::{to_proof, Proof, Prover, ProverConfig, ProverError, ProverResult},
 };
 use sp1_sdk::{ProverClient, SP1ProofWithPublicValues, SP1PublicValues, SP1Stdin};
 
-use crate::{Sp1Response, WorkerPool, WorkerSocket, ELF};
+use crate::{Sp1Response, WorkerPool, ELF};
 
-use super::{
-    sp1_specifics::{self, compute_checkpoints, observe_commitments},
-    Challenger, Checkpoint, Commitments, PartialProof,
-};
+use super::sp1_specifics::{compute_checkpoints, observe_commitments, PartialProof};
 
 pub struct Sp1DistributedProver;
 
@@ -74,13 +65,6 @@ pub struct Sp1DistributedOrchestrator;
 
 impl Sp1DistributedOrchestrator {
     pub async fn prove(stdin: SP1Stdin) -> ProverResult<SP1ProofWithPublicValues<PartialProof>> {
-        // compute checkpoints
-        // send checkpoints to workers for commit
-        // get commit data
-        // observe challenger
-        // send challenger to workers for partial proof
-        // get partial proofs
-
         let worker_pool = WorkerPool::new().await?;
 
         let (checkpoints, public_values_stream, public_values, shard_batch_size) =
@@ -96,68 +80,11 @@ impl Sp1DistributedOrchestrator {
 
         let partial_proofs = worker_pool.prove(challenger).await?;
 
-        /////////
-
-        /* let (checkpoints, public_values_stream, partial_proof_request) =
-            commit(program, &stdin, worker_ip_list.len())
-                .map_err(|e| ProverError::GuestError(e.to_string()))?;
-
-        let proofs = super::orchestrator::distribute_work(
-            worker_ip_list,
-            checkpoints,
-            partial_proof_request,
-        )
-        .await?; */
-
         Ok(SP1ProofWithPublicValues {
             proof: partial_proofs,
             stdin,
             public_values: SP1PublicValues::from(&public_values_stream),
             sp1_version: sp1_core::SP1_CIRCUIT_VERSION.to_string(),
         })
-    }
-
-    /* pub async fn run_as_worker(request: WorkerRequest) -> ProverResult<WorkerResponse> {
-        log::debug!(
-            "Running SP1 Distributed worker: shard nb {}",
-            partial_proof_request.checkpoint_id
-        );
-
-        match request {
-            WorkerRequest::Commit(i, checkpoint, public_values) => {
-                let commitment = commit(&checkpoint, &public_values);
-
-                Ok(WorkerResponse::Commit(i, commitment))
-            }
-            WorkerRequest::Prove(i, challenger) => {
-                let partial_proof = prove_partial(&challenger);
-
-                Ok(WorkerResponse::Prove(i, partial_proof))
-            }
-        }
-
-        let partial_proof = prove_partial(&partial_proof_request);
-
-        Ok(partial_proof)
-    } */
-}
-
-pub struct Sp1DistributedWorker;
-
-impl Sp1DistributedWorker {
-    pub fn commit(
-        checkpoint: Checkpoint,
-        public_values: PublicValues<u32, u32>,
-        shard_batch_size: usize,
-    ) -> Result<(Vec<ExecutionRecord>, Commitments), WorkerError> {
-        sp1_specifics::commit(checkpoint, public_values, shard_batch_size)
-    }
-
-    pub fn prove(
-        shards: Vec<ExecutionRecord>,
-        public_values: PublicValues<u32, u32>,
-        challenger: Challenger,
-    ) -> Result<PartialProof, WorkerError> {
-        sp1_specifics::prove(shards, public_values, challenger)
     }
 }

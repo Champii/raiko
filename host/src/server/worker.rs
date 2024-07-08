@@ -1,7 +1,7 @@
 use crate::ProverState;
 use raiko_lib::prover::{ProverError, WorkerError};
 use sp1_driver::{
-    ExecutionRecord, PublicValues, WorkerProtocol, WorkerRequest, WorkerResponse, WorkerSocket,
+    sp1_specifics::Shards, WorkerProtocol, WorkerRequest, WorkerResponse, WorkerSocket,
 };
 use tokio::net::TcpListener;
 use tracing::{error, info, warn};
@@ -46,9 +46,9 @@ async fn listen_worker(state: ProverState) {
 async fn handle_worker_socket(mut socket: WorkerSocket) -> Result<(), ProverError> {
     handle_ping(&mut socket).await?;
 
-    let (shards, public_values, shard_batch_size) = handle_commit(&mut socket).await?;
+    let shards = handle_commit(&mut socket).await?;
 
-    handle_prove(&mut socket, shards, public_values, shard_batch_size).await?;
+    handle_prove(&mut socket, shards).await?;
 
     Ok(())
 }
@@ -62,9 +62,7 @@ async fn handle_ping(socket: &mut WorkerSocket) -> Result<(), WorkerError> {
     }
 }
 
-async fn handle_commit(
-    socket: &mut WorkerSocket,
-) -> Result<(Vec<ExecutionRecord>, PublicValues<u32, u32>, usize), WorkerError> {
+async fn handle_commit(socket: &mut WorkerSocket) -> Result<Shards, WorkerError> {
     let request = socket.receive().await?;
 
     match request {
@@ -73,33 +71,25 @@ async fn handle_commit(
             public_values,
             shard_batch_size,
         )) => {
-            let (shards, commitment) = sp1_driver::sp1_specifics::commit(
-                checkpoint,
-                public_values.clone(),
-                shard_batch_size,
-            )?;
+            let (shards, commitment) =
+                sp1_driver::sp1_specifics::commit(checkpoint, public_values, shard_batch_size)?;
 
             socket
                 .send(WorkerProtocol::Response(WorkerResponse::Commit(commitment)))
                 .await?;
 
-            Ok((shards, public_values, shard_batch_size))
+            Ok(shards)
         }
         _ => Err(WorkerError::InvalidRequest),
     }
 }
 
-async fn handle_prove(
-    socket: &mut WorkerSocket,
-    shards: Vec<ExecutionRecord>,
-    public_values: PublicValues<u32, u32>,
-    shard_batch_size: usize,
-) -> Result<(), WorkerError> {
+async fn handle_prove(socket: &mut WorkerSocket, shards: Shards) -> Result<(), WorkerError> {
     let request = socket.receive().await?;
 
     match request {
         WorkerProtocol::Request(WorkerRequest::Prove(challenger)) => {
-            let proof = sp1_driver::sp1_specifics::prove(shards, public_values, challenger)?;
+            let proof = sp1_driver::sp1_specifics::prove(shards, challenger)?;
 
             socket
                 .send(WorkerProtocol::Response(WorkerResponse::Prove(proof)))

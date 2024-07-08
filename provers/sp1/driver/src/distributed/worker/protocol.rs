@@ -1,7 +1,6 @@
 use std::fmt::{Display, Formatter};
 
 use serde::{Deserialize, Serialize};
-use sp1_core::{air::PublicValues, stark::ShardProof, utils::BabyBearPoseidon2};
 
 use super::pool::{WorkerRequest, WorkerResponse};
 

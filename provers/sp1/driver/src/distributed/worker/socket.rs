@@ -1,5 +1,4 @@
 use raiko_lib::prover::WorkerError;
-use sp1_core::{stark::ShardProof, utils::BabyBearPoseidon2};
 use tokio::io::{AsyncReadExt, AsyncWriteExt, BufWriter};
 
 use crate::{WorkerEnvelope, WorkerProtocol};
