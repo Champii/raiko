@@ -21,6 +21,7 @@ use crate::ELF;
 pub type Checkpoint = ExecutionState;
 pub type Shard = ExecutionRecord;
 pub type Shards = Vec<Shard>;
+pub type ShardsPublicValues = Vec<Val>;
 pub type Commitments = Vec<Hash<Val, Val, 8>>;
 pub type PartialProof = Vec<ShardProof<BabyBearPoseidon2>>;
 pub type Challenger = DuplexChallenger<Val, Perm, 16, 8>;
@@ -101,7 +102,7 @@ pub fn commit(
     checkpoint: Checkpoint,
     public_values: PublicValues<u32, u32>,
     shard_batch_size: usize,
-) -> Result<(Shards, Commitments), WorkerError> {
+) -> Result<(Shards, Commitments, Vec<ShardsPublicValues>), WorkerError> {
     log::info!("Commiting checkpoint");
 
     let config = CoreSC::default();
@@ -117,14 +118,23 @@ pub fn commit(
 
     let machine = RiscvAir::machine(config.clone());
 
+    log::info!("Sharding checkpoint");
+
     let checkpoint_shards =
         tracing::info_span!("shard").in_scope(|| machine.shard(record, &sharding_config));
+
+    log::info!("Commiting shards");
 
     // Commit to each shard.
     let (commitments, _commit_data) = tracing::info_span!("commit")
         .in_scope(|| LocalProver::commit_shards(&machine, &checkpoint_shards, opts));
 
-    Ok((checkpoint_shards, commitments))
+    let shards_public_values = checkpoint_shards
+        .iter()
+        .map(|shard| shard.public_values::<Val>())
+        .collect();
+
+    Ok((checkpoint_shards, commitments, shards_public_values))
 }
 
 pub fn prove(shards: Shards, challenger: Challenger) -> Result<PartialProof, WorkerError> {
@@ -181,11 +191,11 @@ pub fn prove(shards: Shards, challenger: Challenger) -> Result<PartialProof, Wor
 
 pub fn observe_commitments(
     commitments: Commitments,
-    public_values: PublicValues<u32, u32>,
+    shards_public_values: Vec<ShardsPublicValues>,
 ) -> Challenger {
     log::info!("Observing commitments");
 
-    let public_values: Vec<Val> = public_values.to_vec();
+    let public_values: Vec<Vec<Val>> = shards_public_values.to_vec();
 
     let config = CoreSC::default();
 
@@ -199,9 +209,9 @@ pub fn observe_commitments(
 
     vk.observe_into(&mut challenger);
 
-    for commitment in commitments {
+    for (commitment, shard_public_values) in commitments.into_iter().zip(public_values.iter()) {
         challenger.observe(commitment);
-        challenger.observe_slice(&public_values[0..machine.num_pv_elts()]);
+        challenger.observe_slice(&shard_public_values[0..machine.num_pv_elts()]);
     }
 
     challenger

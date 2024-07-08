@@ -9,7 +9,7 @@ use sp1_core::air::PublicValues;
 use tokio::sync::RwLock;
 
 use crate::{
-    sp1_specifics::{Challenger, Checkpoint, Commitments, PartialProof},
+    sp1_specifics::{Challenger, Checkpoint, Commitments, PartialProof, ShardsPublicValues},
     WorkerSocket,
 };
 
@@ -32,14 +32,14 @@ impl Display for WorkerRequest {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum WorkerResponse {
-    Commit(Commitments),
+    Commit(Commitments, Vec<ShardsPublicValues>),
     Prove(PartialProof),
 }
 
 impl Display for WorkerResponse {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            WorkerResponse::Commit(_) => write!(f, "Commit"),
+            WorkerResponse::Commit(_, _) => write!(f, "Commit"),
             WorkerResponse::Prove(_) => write!(f, "Prove"),
         }
     }
@@ -61,7 +61,7 @@ impl WorkerPool {
         checkpoints: Vec<Checkpoint>,
         public_values: PublicValues<u32, u32>,
         shard_batch_size: usize,
-    ) -> Result<Commitments, WorkerError> {
+    ) -> Result<(Commitments, Vec<ShardsPublicValues>), WorkerError> {
         let requests = checkpoints
             .into_iter()
             .map(|checkpoint| {
@@ -72,16 +72,18 @@ impl WorkerPool {
         let commitments_response = self.distribute_work(requests).await?;
 
         let mut commitments = Vec::new();
+        let mut shards_public_values = Vec::new();
 
         for response in commitments_response {
-            if let WorkerResponse::Commit(commitment) = response {
+            if let WorkerResponse::Commit(commitment, got_shards_public_values) = response {
                 commitments.extend(commitment);
+                shards_public_values.extend(got_shards_public_values);
             } else {
                 return Err(WorkerError::InvalidResponse);
             }
         }
 
-        Ok(commitments)
+        Ok((commitments, shards_public_values))
     }
 
     pub async fn prove(&mut self, challenger: Challenger) -> Result<PartialProof, WorkerError> {

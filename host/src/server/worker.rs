@@ -71,11 +71,14 @@ async fn handle_commit(socket: &mut WorkerSocket) -> Result<Shards, WorkerError>
             public_values,
             shard_batch_size,
         )) => {
-            let (shards, commitment) =
+            let (shards, commitment, shards_public_values) =
                 sp1_driver::sp1_specifics::commit(checkpoint, public_values, shard_batch_size)?;
 
             socket
-                .send(WorkerProtocol::Response(WorkerResponse::Commit(commitment)))
+                .send(WorkerProtocol::Response(WorkerResponse::Commit(
+                    commitment,
+                    shards_public_values,
+                )))
                 .await?;
 
             Ok(shards)

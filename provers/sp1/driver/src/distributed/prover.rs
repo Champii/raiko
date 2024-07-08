@@ -72,11 +72,11 @@ impl Sp1DistributedOrchestrator {
                 ProverError::GuestError(format!("Error while computing checkpoints: {}", e))
             })?;
 
-        let commitments = worker_pool
+        let (commitments, shards_public_values) = worker_pool
             .commit(checkpoints, public_values, shard_batch_size)
             .await?;
 
-        let challenger = observe_commitments(commitments, public_values);
+        let challenger = observe_commitments(commitments, shards_public_values);
 
         let partial_proofs = worker_pool.prove(challenger).await?;
 
