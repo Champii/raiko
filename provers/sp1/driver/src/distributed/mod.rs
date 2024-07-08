@@ -1,4 +1,3 @@
-mod orchestrator;
 mod prover;
 pub mod sp1_specifics;
 mod worker;
