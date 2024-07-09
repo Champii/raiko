@@ -171,6 +171,8 @@ pub fn commit(
         shards_public_values_vec.push(shards_public_values);
 
         checkpoint = new_checkpoint;
+
+        processed_checkpoints += 1;
     }
 
     Ok((
