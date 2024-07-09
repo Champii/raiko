@@ -62,7 +62,7 @@ async fn handle_ping(socket: &mut WorkerSocket) -> Result<(), WorkerError> {
     }
 }
 
-async fn handle_commit(socket: &mut WorkerSocket) -> Result<Shards, WorkerError> {
+async fn handle_commit(socket: &mut WorkerSocket) -> Result<Vec<Shards>, WorkerError> {
     let request = socket.receive().await?;
 
     match request {
@@ -87,7 +87,7 @@ async fn handle_commit(socket: &mut WorkerSocket) -> Result<Shards, WorkerError>
     }
 }
 
-async fn handle_prove(socket: &mut WorkerSocket, shards: Shards) -> Result<(), WorkerError> {
+async fn handle_prove(socket: &mut WorkerSocket, shards: Vec<Shards>) -> Result<(), WorkerError> {
     let request = socket.receive().await?;
 
     match request {

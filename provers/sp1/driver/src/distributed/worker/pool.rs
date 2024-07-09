@@ -15,7 +15,7 @@ use crate::{
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum WorkerRequest {
-    Commit(Checkpoint, PublicValues<u32, u32>, usize),
+    Commit(Vec<Checkpoint>, PublicValues<u32, u32>, usize),
     Prove(Challenger),
 }
 
@@ -32,7 +32,7 @@ impl Display for WorkerRequest {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum WorkerResponse {
-    Commit(Commitments, Vec<ShardsPublicValues>),
+    Commit(Vec<Commitments>, Vec<Vec<ShardsPublicValues>>),
     Prove(PartialProof),
 }
 
@@ -58,10 +58,10 @@ impl WorkerPool {
 
     pub async fn commit(
         &mut self,
-        checkpoints: Vec<Checkpoint>,
+        checkpoints: Vec<Vec<Checkpoint>>,
         public_values: PublicValues<u32, u32>,
         shard_batch_size: usize,
-    ) -> Result<(Commitments, Vec<ShardsPublicValues>), WorkerError> {
+    ) -> Result<(Vec<Commitments>, Vec<Vec<ShardsPublicValues>>), WorkerError> {
         let requests = checkpoints
             .into_iter()
             .map(|checkpoint| {
@@ -116,6 +116,7 @@ impl WorkerPool {
 
         for (request, worker) in requests.into_iter().zip(self.workers.iter()) {
             let worker = Arc::clone(worker);
+
             set.spawn(async move { worker.write().await.request(request).await });
         }
 

@@ -38,7 +38,7 @@ fn trace_checkpoint(program: Program, checkpoint: Checkpoint, opts: SP1CoreOpts)
 pub fn compute_checkpoints(
     stdin: &SP1Stdin,
     nb_workers: usize,
-) -> Result<(Vec<Checkpoint>, Vec<u8>, PublicValues<u32, u32>, usize), SP1CoreProverError> {
+) -> Result<(Vec<Vec<Checkpoint>>, Vec<u8>, PublicValues<u32, u32>, usize), SP1CoreProverError> {
     log::info!("Computing checkpoints");
     let mut opts = SP1CoreOpts::default();
 
@@ -83,11 +83,11 @@ pub fn compute_checkpoints(
 
     log::debug!("Total checkpointing took {:?}", checkpoints_start.elapsed());
 
-    opts.shard_batch_size = (checkpoints_states.len() as f64 / nb_workers as f64).ceil() as usize;
+    let shard_batch_size = (checkpoints_states.len() as f64 / nb_workers as f64).ceil() as usize;
 
     let checkpoints_states = checkpoints_states
-        .chunks(opts.shard_batch_size)
-        .map(|chunk| chunk[0].clone())
+        .chunks(shard_batch_size)
+        .map(|chunk| chunk.to_vec())
         .collect::<Vec<_>>();
 
     Ok((
@@ -99,10 +99,10 @@ pub fn compute_checkpoints(
 }
 
 pub fn commit(
-    checkpoint: Checkpoint,
+    checkpoints: Vec<Checkpoint>,
     public_values: PublicValues<u32, u32>,
     shard_batch_size: usize,
-) -> Result<(Shards, Commitments, Vec<ShardsPublicValues>), WorkerError> {
+) -> Result<(Vec<Shards>, Vec<Commitments>, Vec<Vec<ShardsPublicValues>>), WorkerError> {
     log::info!("Commiting checkpoint");
 
     let config = CoreSC::default();
@@ -113,31 +113,48 @@ pub fn commit(
 
     let program = Program::from(ELF);
 
-    let mut record = trace_checkpoint(program.clone(), checkpoint, opts);
-    record.public_values = public_values;
+    let mut checkpoint_shards_vec = Vec::new();
+    let mut commitments_vec = Vec::new();
+    let mut shards_public_values_vec = Vec::new();
 
-    let machine = RiscvAir::machine(config.clone());
+    for checkpoint in checkpoints {
+        let mut record = trace_checkpoint(program.clone(), checkpoint, opts);
+        record.public_values = public_values;
 
-    log::info!("Sharding checkpoint");
+        let machine = RiscvAir::machine(config.clone());
 
-    let checkpoint_shards =
-        tracing::info_span!("shard").in_scope(|| machine.shard(record, &sharding_config));
+        log::info!("Sharding checkpoint");
 
-    log::info!("Commiting shards");
+        let checkpoint_shards =
+            tracing::info_span!("shard").in_scope(|| machine.shard(record, &sharding_config));
 
-    // Commit to each shard.
-    let (commitments, _commit_data) = tracing::info_span!("commit")
-        .in_scope(|| LocalProver::commit_shards(&machine, &checkpoint_shards, opts));
+        log::info!("Commiting shards");
 
-    let shards_public_values = checkpoint_shards
-        .iter()
-        .map(|shard| shard.public_values::<Val>())
-        .collect();
+        // Commit to each shard.
+        let (commitments, _commit_data) = tracing::info_span!("commit")
+            .in_scope(|| LocalProver::commit_shards(&machine, &checkpoint_shards, opts));
 
-    Ok((checkpoint_shards, commitments, shards_public_values))
+        let shards_public_values = checkpoint_shards
+            .iter()
+            .map(|shard| shard.public_values::<Val>())
+            .collect();
+
+        checkpoint_shards_vec.push(checkpoint_shards);
+        commitments_vec.push(commitments);
+        shards_public_values_vec.push(shards_public_values);
+    }
+
+    Ok((
+        checkpoint_shards_vec,
+        commitments_vec,
+        shards_public_values_vec,
+    ))
 }
 
-pub fn prove(shards: Shards, challenger: Challenger) -> Result<PartialProof, WorkerError> {
+pub fn prove(
+    checkpoints: Vec<Shards>,
+    challenger: Challenger,
+) -> Result<PartialProof, WorkerError> {
     log::info!("Proving shards");
 
     let config = CoreSC::default();
@@ -147,55 +164,59 @@ pub fn prove(shards: Shards, challenger: Challenger) -> Result<PartialProof, Wor
     let machine = RiscvAir::machine(config.clone());
     let (pk, _vk) = machine.setup(&program);
 
-    let nb_shards = shards.len();
-
-    let proofs = shards
+    let proofs = checkpoints
         .into_iter()
-        .enumerate()
-        .map(|(i, shard)| {
-            log::info!("Proving shard {}/{}", i + 1, nb_shards);
+        .map(|shards| {
+            let nb_shards = shards.len();
 
-            let config = machine.config();
+            shards
+                .into_iter()
+                .enumerate()
+                .map(|(i, shard)| {
+                    log::info!("Proving shard {}/{}", i + 1, nb_shards);
 
-            let commit_main_start = Instant::now();
+                    let config = machine.config();
 
-            let shard_data =
-                LocalProver::commit_main(config, &machine, &shard, shard.index() as usize);
+                    let commit_main_start = Instant::now();
 
-            log::debug!("Commit main took {:?}", commit_main_start.elapsed());
+                    let shard_data =
+                        LocalProver::commit_main(config, &machine, &shard, shard.index() as usize);
 
-            let chip_ordering = shard_data.chip_ordering.clone();
-            let ordered_chips = machine
-                .shard_chips_ordered(&chip_ordering)
+                    log::debug!("Commit main took {:?}", commit_main_start.elapsed());
+
+                    let chip_ordering = shard_data.chip_ordering.clone();
+                    let ordered_chips = machine
+                        .shard_chips_ordered(&chip_ordering)
+                        .collect::<Vec<_>>()
+                        .to_vec();
+
+                    let prove_shard_start = Instant::now();
+
+                    let proof = LocalProver::prove_shard(
+                        config,
+                        &pk,
+                        &ordered_chips,
+                        shard_data,
+                        &mut challenger.clone(),
+                    );
+
+                    log::debug!("Prove shard took {:?}", prove_shard_start.elapsed());
+
+                    proof
+                })
                 .collect::<Vec<_>>()
-                .to_vec();
-
-            let prove_shard_start = Instant::now();
-
-            let proof = LocalProver::prove_shard(
-                config,
-                &pk,
-                &ordered_chips,
-                shard_data,
-                &mut challenger.clone(),
-            );
-
-            log::debug!("Prove shard took {:?}", prove_shard_start.elapsed());
-
-            proof
         })
-        .collect::<Vec<_>>();
+        .flatten()
+        .collect();
 
     Ok(proofs)
 }
 
 pub fn observe_commitments(
-    commitments: Commitments,
-    shards_public_values: Vec<ShardsPublicValues>,
+    commitments: Vec<Commitments>,
+    shards_public_values: Vec<Vec<ShardsPublicValues>>,
 ) -> Challenger {
     log::info!("Observing commitments");
-
-    let public_values: Vec<Vec<Val>> = shards_public_values.to_vec();
 
     let config = CoreSC::default();
 
@@ -205,11 +226,15 @@ pub fn observe_commitments(
     let machine = RiscvAir::machine(config.clone());
     let (_pk, vk) = machine.setup(&program);
 
-    let mut challenger = config.challenger();
+    let mut challenger = machine.config().challenger();
 
     vk.observe_into(&mut challenger);
 
-    for (commitment, shard_public_values) in commitments.into_iter().zip(public_values.iter()) {
+    for (commitment, shard_public_values) in commitments
+        .into_iter()
+        .flatten()
+        .zip(shards_public_values.iter().flatten())
+    {
         challenger.observe(commitment);
         challenger.observe_slice(&shard_public_values[0..machine.num_pv_elts()]);
     }
