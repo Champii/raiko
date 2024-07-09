@@ -28,9 +28,9 @@ impl WorkerSocket {
 
         let data = bincode::serialize(&envelope)?;
 
-        if data.len() > PAYLOAD_MAX_SIZE {
+        /* if data.len() > PAYLOAD_MAX_SIZE {
             return Err(WorkerError::PayloadTooBig);
-        }
+        } */
 
         self.socket.write_u64(data.len() as u64).await?;
         self.socket.write_all(&data).await?;
@@ -50,9 +50,9 @@ impl WorkerSocket {
     pub async fn read_data(&mut self) -> Result<Vec<u8>, WorkerError> {
         let size = self.socket.read_u64().await? as usize;
 
-        if size > PAYLOAD_MAX_SIZE {
+        /* if size > PAYLOAD_MAX_SIZE {
             return Err(WorkerError::PayloadTooBig);
-        }
+        } */
 
         let mut data = Vec::new();
 
