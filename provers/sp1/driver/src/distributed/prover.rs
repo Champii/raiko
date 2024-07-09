@@ -73,12 +73,14 @@ impl Sp1DistributedOrchestrator {
             })?;
 
         let (commitments, shards_public_values) = worker_pool
-            .commit(checkpoints, public_values, shard_batch_size)
+            .commit(checkpoints.clone(), public_values, shard_batch_size)
             .await?;
 
         let challenger = observe_commitments(commitments, shards_public_values);
 
-        let partial_proofs = worker_pool.prove(challenger).await?;
+        let partial_proofs = worker_pool
+            .prove(checkpoints, public_values, shard_batch_size, challenger)
+            .await?;
 
         Ok(SP1ProofWithPublicValues {
             proof: partial_proofs,

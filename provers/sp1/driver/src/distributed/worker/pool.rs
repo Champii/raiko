@@ -16,7 +16,7 @@ use crate::{
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum WorkerRequest {
     Commit(Checkpoint, usize, PublicValues<u32, u32>, usize),
-    Prove(Challenger),
+    Prove(Checkpoint, usize, PublicValues<u32, u32>, usize, Challenger),
 }
 
 impl Display for WorkerRequest {
@@ -25,7 +25,7 @@ impl Display for WorkerRequest {
             WorkerRequest::Commit(_, _, _, _) => {
                 write!(f, "Commit")
             }
-            WorkerRequest::Prove(_) => write!(f, "Prove"),
+            WorkerRequest::Prove(_, _, _, _, _) => write!(f, "Prove"),
         }
     }
 }
@@ -91,9 +91,24 @@ impl WorkerPool {
         Ok((commitments, shards_public_values))
     }
 
-    pub async fn prove(&mut self, challenger: Challenger) -> Result<PartialProof, WorkerError> {
-        let requests = (0..self.workers.len())
-            .map(|_| WorkerRequest::Prove(challenger.clone()))
+    pub async fn prove(
+        &mut self,
+        checkpoints: Vec<(Checkpoint, usize)>,
+        public_values: PublicValues<u32, u32>,
+        shard_batch_size: usize,
+        challenger: Challenger,
+    ) -> Result<PartialProof, WorkerError> {
+        let requests = checkpoints
+            .into_iter()
+            .map(|(checkpoint, nb_checkpoints)| {
+                WorkerRequest::Prove(
+                    checkpoint,
+                    nb_checkpoints,
+                    public_values,
+                    shard_batch_size,
+                    challenger.clone(),
+                )
+            })
             .collect();
 
         let proofs_response = self.distribute_work(requests).await?;

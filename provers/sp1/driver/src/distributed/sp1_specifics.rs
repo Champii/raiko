@@ -41,6 +41,8 @@ fn trace_checkpoint(
     (events, state)
 }
 
+// This is the entry point of the orchestrator
+// It computes the checkpoints to be sent to the workers
 pub fn compute_checkpoints(
     stdin: &SP1Stdin,
     nb_workers: usize,
@@ -114,6 +116,8 @@ pub fn compute_checkpoints(
     ))
 }
 
+// This is the entry point of the worker
+// It commits the checkpoints and returns the commitments and the public values of the shards
 pub fn commit(
     mut checkpoint: Checkpoint,
     nb_checkpoints: usize,
@@ -153,9 +157,7 @@ pub fn commit(
         let checkpoint_shards =
             tracing::info_span!("shard").in_scope(|| machine.shard(record, &sharding_config));
 
-        log::info!("Nb shards: {}", checkpoint_shards.len());
-
-        log::info!("Commiting shards");
+        log::info!("Commiting {} shards", checkpoint_shards.len());
 
         // Commit to each shard.
         let (commitments, _commit_data) = tracing::info_span!("commit")
@@ -182,76 +184,7 @@ pub fn commit(
     ))
 }
 
-pub fn prove(
-    checkpoints: Vec<Shards>,
-    challenger: Challenger,
-) -> Result<PartialProof, WorkerError> {
-    log::info!("Proving shards");
-
-    let config = CoreSC::default();
-
-    let program = Program::from(ELF);
-
-    let machine = RiscvAir::machine(config.clone());
-    let (pk, _vk) = machine.setup(&program);
-
-    let checkpoints_len = checkpoints.len();
-
-    let proofs = checkpoints
-        .into_iter()
-        .enumerate()
-        .map(|(i, shards)| {
-            log::info!("Proving checkpoint {}/{}", i + 1, checkpoints_len);
-
-            let nb_shards = shards.len();
-
-            shards
-                .into_iter()
-                .enumerate()
-                .map(|(i, shard)| {
-                    log::info!("Proving shard {}/{}", i + 1, nb_shards);
-
-                    let config = machine.config();
-
-                    let commit_main_start = Instant::now();
-
-                    log::info!("Committing main");
-
-                    let shard_data =
-                        LocalProver::commit_main(config, &machine, &shard, shard.index() as usize);
-
-                    log::debug!("Commit main took {:?}", commit_main_start.elapsed());
-
-                    let chip_ordering = shard_data.chip_ordering.clone();
-                    let ordered_chips = machine
-                        .shard_chips_ordered(&chip_ordering)
-                        .collect::<Vec<_>>()
-                        .to_vec();
-
-                    let prove_shard_start = Instant::now();
-
-                    log::info!("Proving shard");
-
-                    let proof = LocalProver::prove_shard(
-                        config,
-                        &pk,
-                        &ordered_chips,
-                        shard_data,
-                        &mut challenger.clone(),
-                    );
-
-                    log::debug!("Prove shard took {:?}", prove_shard_start.elapsed());
-
-                    proof
-                })
-                .collect::<Vec<_>>()
-        })
-        .flatten()
-        .collect();
-
-    Ok(proofs)
-}
-
+// When every worker has committed the shards, the orchestrator can observe the commitments
 pub fn observe_commitments(
     commitments: Vec<Commitments>,
     shards_public_values: Vec<Vec<ShardsPublicValues>>,
@@ -268,8 +201,6 @@ pub fn observe_commitments(
 
     let mut challenger = machine.config().challenger();
 
-    log::info!("Observing commitments");
-
     vk.observe_into(&mut challenger);
 
     for (commitment, shard_public_values) in commitments
@@ -282,4 +213,149 @@ pub fn observe_commitments(
     }
 
     challenger
+}
+
+// The workers can now prove the shards thanks to the challenger sent by the orchestrator
+pub fn prove(
+    mut checkpoint: Checkpoint,
+    nb_checkpoints: usize,
+    public_values: PublicValues<u32, u32>,
+    shard_batch_size: usize,
+    challenger: Challenger,
+) -> Result<PartialProof, WorkerError> {
+    log::info!("Proving shards");
+
+    let config = CoreSC::default();
+    let mut opts = SP1CoreOpts::default();
+
+    opts.shard_batch_size = shard_batch_size;
+
+    let sharding_config = ShardingConfig::default();
+
+    let program = Program::from(ELF);
+
+    let machine = RiscvAir::machine(config.clone());
+    let (pk, _vk) = machine.setup(&program);
+
+    let mut processed_checkpoints = 0;
+
+    let mut proofs = Vec::new();
+
+    while processed_checkpoints < nb_checkpoints {
+        log::info!(
+            "Proving checkpoint {}/{}",
+            processed_checkpoints + 1,
+            nb_checkpoints
+        );
+
+        let (mut record, new_checkpoint) = trace_checkpoint(program.clone(), checkpoint, opts);
+        record.public_values = public_values;
+
+        log::info!("Sharding checkpoint");
+
+        let checkpoint_shards =
+            tracing::info_span!("shard").in_scope(|| machine.shard(record, &sharding_config));
+
+        let nb_shards = checkpoint_shards.len();
+
+        let partial_proofs = checkpoint_shards
+            .into_iter()
+            .enumerate()
+            .map(|(i, shard)| {
+                log::info!("Proving shard {}/{}", i + 1, nb_shards);
+
+                let config = machine.config();
+
+                let commit_main_start = Instant::now();
+
+                log::info!("Committing main");
+
+                let shard_data =
+                    LocalProver::commit_main(config, &machine, &shard, shard.index() as usize);
+
+                log::debug!("Commit main took {:?}", commit_main_start.elapsed());
+
+                let chip_ordering = shard_data.chip_ordering.clone();
+                let ordered_chips = machine
+                    .shard_chips_ordered(&chip_ordering)
+                    .collect::<Vec<_>>()
+                    .to_vec();
+
+                let prove_shard_start = Instant::now();
+
+                log::info!("Proving shard");
+
+                let proof = LocalProver::prove_shard(
+                    config,
+                    &pk,
+                    &ordered_chips,
+                    shard_data,
+                    &mut challenger.clone(),
+                );
+
+                log::debug!("Prove shard took {:?}", prove_shard_start.elapsed());
+
+                proof
+            })
+            .collect::<Vec<_>>();
+
+        proofs.extend(partial_proofs);
+
+        checkpoint = new_checkpoint;
+        processed_checkpoints += 1;
+    }
+
+    /* let proofs = checkpoints
+    .into_iter()
+    .enumerate()
+    .map(|(i, shards)| {
+        log::info!("Proving checkpoint {}/{}", i + 1, checkpoints_len);
+
+        let nb_shards = shards.len();
+
+        shards
+            .into_iter()
+            .enumerate()
+            .map(|(i, shard)| {
+                log::info!("Proving shard {}/{}", i + 1, nb_shards);
+
+                let config = machine.config();
+
+                let commit_main_start = Instant::now();
+
+                log::info!("Committing main");
+
+                let shard_data =
+                    LocalProver::commit_main(config, &machine, &shard, shard.index() as usize);
+
+                log::debug!("Commit main took {:?}", commit_main_start.elapsed());
+
+                let chip_ordering = shard_data.chip_ordering.clone();
+                let ordered_chips = machine
+                    .shard_chips_ordered(&chip_ordering)
+                    .collect::<Vec<_>>()
+                    .to_vec();
+
+                let prove_shard_start = Instant::now();
+
+                log::info!("Proving shard");
+
+                let proof = LocalProver::prove_shard(
+                    config,
+                    &pk,
+                    &ordered_chips,
+                    shard_data,
+                    &mut challenger.clone(),
+                );
+
+                log::debug!("Prove shard took {:?}", prove_shard_start.elapsed());
+
+                proof
+            })
+            .collect::<Vec<_>>()
+    })
+    .flatten()
+    .collect(); */
+
+    Ok(proofs)
 }

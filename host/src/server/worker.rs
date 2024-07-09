@@ -46,9 +46,9 @@ async fn listen_worker(state: ProverState) {
 async fn handle_worker_socket(mut socket: WorkerSocket) -> Result<(), ProverError> {
     handle_ping(&mut socket).await?;
 
-    let shards = handle_commit(&mut socket).await?;
+    handle_commit(&mut socket).await?;
 
-    handle_prove(&mut socket, shards).await?;
+    handle_prove(&mut socket).await?;
 
     Ok(())
 }
@@ -92,12 +92,24 @@ async fn handle_commit(socket: &mut WorkerSocket) -> Result<Vec<Shards>, WorkerE
     }
 }
 
-async fn handle_prove(socket: &mut WorkerSocket, shards: Vec<Shards>) -> Result<(), WorkerError> {
+async fn handle_prove(socket: &mut WorkerSocket) -> Result<(), WorkerError> {
     let request = socket.receive().await?;
 
     match request {
-        WorkerProtocol::Request(WorkerRequest::Prove(challenger)) => {
-            let proof = sp1_driver::sp1_specifics::prove(shards, challenger)?;
+        WorkerProtocol::Request(WorkerRequest::Prove(
+            checkpoint,
+            nb_checkpoints,
+            public_values,
+            shard_batch_size,
+            challenger,
+        )) => {
+            let proof = sp1_driver::sp1_specifics::prove(
+                checkpoint,
+                nb_checkpoints,
+                public_values,
+                shard_batch_size,
+                challenger,
+            )?;
 
             socket
                 .send(WorkerProtocol::Response(WorkerResponse::Prove(proof)))
