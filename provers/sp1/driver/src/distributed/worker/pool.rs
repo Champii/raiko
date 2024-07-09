@@ -15,14 +15,14 @@ use crate::{
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum WorkerRequest {
-    Commit(Vec<Checkpoint>, PublicValues<u32, u32>, usize),
+    Commit(Checkpoint, usize, PublicValues<u32, u32>, usize),
     Prove(Challenger),
 }
 
 impl Display for WorkerRequest {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            WorkerRequest::Commit(_, _, _) => {
+            WorkerRequest::Commit(_, _, _, _) => {
                 write!(f, "Commit")
             }
             WorkerRequest::Prove(_) => write!(f, "Prove"),
@@ -58,14 +58,19 @@ impl WorkerPool {
 
     pub async fn commit(
         &mut self,
-        checkpoints: Vec<Vec<Checkpoint>>,
+        checkpoints: Vec<(Checkpoint, usize)>,
         public_values: PublicValues<u32, u32>,
         shard_batch_size: usize,
     ) -> Result<(Vec<Commitments>, Vec<Vec<ShardsPublicValues>>), WorkerError> {
         let requests = checkpoints
             .into_iter()
-            .map(|checkpoint| {
-                WorkerRequest::Commit(checkpoint, public_values.clone(), shard_batch_size)
+            .map(|(checkpoint, nb_checkpoints)| {
+                WorkerRequest::Commit(
+                    checkpoint,
+                    nb_checkpoints,
+                    public_values.clone(),
+                    shard_batch_size,
+                )
             })
             .collect();
 
@@ -114,8 +119,10 @@ impl WorkerPool {
 
         let mut set = JoinSet::new();
 
-        for (request, worker) in requests.into_iter().zip(self.workers.iter()) {
+        for (i, (request, worker)) in requests.into_iter().zip(self.workers.iter()).enumerate() {
             let worker = Arc::clone(worker);
+
+            log::info!("Sp1 Distributed: Sending request to worker {}", i);
 
             set.spawn(async move { worker.write().await.request(request).await });
         }
@@ -127,6 +134,11 @@ impl WorkerPool {
 
             match out {
                 Ok(response) => {
+                    log::info!(
+                        "Sp1 Distributed: Got response from worker {}",
+                        results.len()
+                    );
+
                     results.push(response);
                 }
                 Err(_e) => {

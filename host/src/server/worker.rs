@@ -68,11 +68,16 @@ async fn handle_commit(socket: &mut WorkerSocket) -> Result<Vec<Shards>, WorkerE
     match request {
         WorkerProtocol::Request(WorkerRequest::Commit(
             checkpoint,
+            nb_checkpoints,
             public_values,
             shard_batch_size,
         )) => {
-            let (shards, commitment, shards_public_values) =
-                sp1_driver::sp1_specifics::commit(checkpoint, public_values, shard_batch_size)?;
+            let (shards, commitment, shards_public_values) = sp1_driver::sp1_specifics::commit(
+                checkpoint,
+                nb_checkpoints,
+                public_values,
+                shard_batch_size,
+            )?;
 
             socket
                 .send(WorkerProtocol::Response(WorkerResponse::Commit(

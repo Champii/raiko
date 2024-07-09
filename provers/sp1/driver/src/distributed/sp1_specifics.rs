@@ -26,19 +26,33 @@ pub type Commitments = Vec<Hash<Val, Val, 8>>;
 pub type PartialProof = Vec<ShardProof<BabyBearPoseidon2>>;
 pub type Challenger = DuplexChallenger<Val, Perm, 16, 8>;
 
-fn trace_checkpoint(program: Program, checkpoint: Checkpoint, opts: SP1CoreOpts) -> Shard {
+fn trace_checkpoint(
+    program: Program,
+    checkpoint: Checkpoint,
+    opts: SP1CoreOpts,
+) -> (Shard, Checkpoint) {
     let mut runtime = Runtime::recover(program, checkpoint, opts);
 
     let (events, _) =
         tracing::debug_span!("runtime.trace").in_scope(|| runtime.execute_record().unwrap());
 
-    events
+    let state = runtime.state.clone();
+
+    (events, state)
 }
 
 pub fn compute_checkpoints(
     stdin: &SP1Stdin,
     nb_workers: usize,
-) -> Result<(Vec<Vec<Checkpoint>>, Vec<u8>, PublicValues<u32, u32>, usize), SP1CoreProverError> {
+) -> Result<
+    (
+        Vec<(Checkpoint, usize)>,
+        Vec<u8>,
+        PublicValues<u32, u32>,
+        usize,
+    ),
+    SP1CoreProverError,
+> {
     log::info!("Computing checkpoints");
     let mut opts = SP1CoreOpts::default();
 
@@ -83,11 +97,13 @@ pub fn compute_checkpoints(
 
     log::debug!("Total checkpointing took {:?}", checkpoints_start.elapsed());
 
+    log::info!("Nb checkpoints: {}", checkpoints_states.len());
+
     let shard_batch_size = (checkpoints_states.len() as f64 / nb_workers as f64).ceil() as usize;
 
     let checkpoints_states = checkpoints_states
         .chunks(shard_batch_size)
-        .map(|chunk| chunk.to_vec())
+        .map(|chunk| (chunk[0].clone(), chunk.len()))
         .collect::<Vec<_>>();
 
     Ok((
@@ -99,7 +115,8 @@ pub fn compute_checkpoints(
 }
 
 pub fn commit(
-    checkpoints: Vec<Checkpoint>,
+    mut checkpoint: Checkpoint,
+    nb_checkpoints: usize,
     public_values: PublicValues<u32, u32>,
     shard_batch_size: usize,
 ) -> Result<(Vec<Shards>, Vec<Commitments>, Vec<Vec<ShardsPublicValues>>), WorkerError> {
@@ -117,8 +134,16 @@ pub fn commit(
     let mut commitments_vec = Vec::new();
     let mut shards_public_values_vec = Vec::new();
 
-    for checkpoint in checkpoints {
-        let mut record = trace_checkpoint(program.clone(), checkpoint, opts);
+    let mut processed_checkpoints = 0;
+
+    while processed_checkpoints < nb_checkpoints {
+        log::info!(
+            "Commiting checkpoint {}/{}",
+            processed_checkpoints + 1,
+            nb_checkpoints
+        );
+
+        let (mut record, new_checkpoint) = trace_checkpoint(program.clone(), checkpoint, opts);
         record.public_values = public_values;
 
         let machine = RiscvAir::machine(config.clone());
@@ -127,6 +152,8 @@ pub fn commit(
 
         let checkpoint_shards =
             tracing::info_span!("shard").in_scope(|| machine.shard(record, &sharding_config));
+
+        log::info!("Nb shards: {}", checkpoint_shards.len());
 
         log::info!("Commiting shards");
 
@@ -142,6 +169,8 @@ pub fn commit(
         checkpoint_shards_vec.push(checkpoint_shards);
         commitments_vec.push(commitments);
         shards_public_values_vec.push(shards_public_values);
+
+        checkpoint = new_checkpoint;
     }
 
     Ok((
@@ -164,9 +193,14 @@ pub fn prove(
     let machine = RiscvAir::machine(config.clone());
     let (pk, _vk) = machine.setup(&program);
 
+    let checkpoints_len = checkpoints.len();
+
     let proofs = checkpoints
         .into_iter()
-        .map(|shards| {
+        .enumerate()
+        .map(|(i, shards)| {
+            log::info!("Proving checkpoint {}/{}", i + 1, checkpoints_len);
+
             let nb_shards = shards.len();
 
             shards
@@ -178,6 +212,8 @@ pub fn prove(
                     let config = machine.config();
 
                     let commit_main_start = Instant::now();
+
+                    log::info!("Committing main");
 
                     let shard_data =
                         LocalProver::commit_main(config, &machine, &shard, shard.index() as usize);
@@ -191,6 +227,8 @@ pub fn prove(
                         .to_vec();
 
                     let prove_shard_start = Instant::now();
+
+                    log::info!("Proving shard");
 
                     let proof = LocalProver::prove_shard(
                         config,
@@ -227,6 +265,8 @@ pub fn observe_commitments(
     let (_pk, vk) = machine.setup(&program);
 
     let mut challenger = machine.config().challenger();
+
+    log::info!("Observing commitments");
 
     vk.observe_into(&mut challenger);
 
