@@ -4,7 +4,8 @@ use raiko_lib::{
     input::{GuestInput, GuestOutput},
     prover::{to_proof, Proof, Prover, ProverConfig, ProverError, ProverResult},
 };
-use sp1_sdk::{ProverClient, SP1ProofWithPublicValues, SP1PublicValues, SP1Stdin};
+use sp1_core::{runtime::Program, stark::RiscvAir};
+use sp1_sdk::{CoreSC, ProverClient, SP1ProofWithPublicValues, SP1PublicValues, SP1Stdin};
 
 use crate::{sp1_specifics, Sp1Response, WorkerPool, ELF};
 
@@ -67,16 +68,23 @@ impl Sp1DistributedOrchestrator {
     pub async fn prove(stdin: SP1Stdin) -> ProverResult<SP1ProofWithPublicValues<PartialProofs>> {
         let mut worker_pool = WorkerPool::new().await?;
 
+        let program = Program::from(ELF);
+        let config = CoreSC::default();
+
+        let machine = RiscvAir::machine(config.clone());
+        let (_pk, vk) = machine.setup(&program);
+
         let (checkpoints, public_values_stream, public_values, opts) =
-            sp1_specifics::compute_checkpoints(&stdin, worker_pool.len()).map_err(|e| {
-                ProverError::GuestError(format!("Error while computing checkpoints: {}", e))
-            })?;
+            sp1_specifics::compute_checkpoints(&stdin, &program, worker_pool.len()).map_err(
+                |e| ProverError::GuestError(format!("Error while computing checkpoints: {}", e)),
+            )?;
 
         let (commitments, shards_public_values) = worker_pool
             .commit(checkpoints.clone(), public_values, opts)
             .await?;
 
-        let challenger = sp1_specifics::observe_commitments(commitments, shards_public_values);
+        let challenger =
+            sp1_specifics::observe_commitments(&machine, &vk, commitments, shards_public_values);
 
         let partial_proofs = worker_pool
             .prove(checkpoints, public_values, opts, challenger)

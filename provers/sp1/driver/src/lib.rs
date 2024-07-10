@@ -12,7 +12,7 @@ pub use distributed::{
 
 pub use local::Sp1Prover;
 
-const ELF: &[u8] = include_bytes!("../../guest/elf/sp1-guest");
+pub const ELF: &[u8] = include_bytes!("../../guest/elf/sp1-guest");
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct Sp1Response {

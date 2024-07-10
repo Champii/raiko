@@ -5,18 +5,22 @@ use p3_symmetric::Hash;
 
 use raiko_lib::prover::WorkerError;
 pub use sp1_core::air::PublicValues;
+pub use sp1_core::runtime::Program;
+pub use sp1_core::stark::RiscvAir;
+
 use sp1_core::{
-    runtime::{ExecutionRecord, ExecutionState, Program, Runtime, ShardingConfig},
-    stark::{LocalProver, MachineRecord, RiscvAir, ShardProof, StarkGenericConfig},
+    runtime::{ExecutionRecord, ExecutionState, Runtime, ShardingConfig},
+    stark::{
+        LocalProver, MachineRecord, ShardProof, StarkGenericConfig, StarkMachine, StarkProvingKey,
+        StarkVerifyingKey,
+    },
     utils::{
         baby_bear_poseidon2::{Perm, Val},
         BabyBearPoseidon2, SP1CoreOpts, SP1CoreProverError,
     },
 };
 
-use sp1_sdk::{CoreSC, SP1Stdin};
-
-use crate::ELF;
+pub use sp1_sdk::{CoreSC, SP1Stdin};
 
 pub type Checkpoint = ExecutionState;
 pub type Shard = ExecutionRecord;
@@ -24,6 +28,9 @@ pub type ShardsPublicValues = Vec<Val>;
 pub type Commitments = Vec<Hash<Val, Val, 8>>;
 pub type PartialProofs = Vec<ShardProof<BabyBearPoseidon2>>;
 pub type Challenger = DuplexChallenger<Val, Perm, 16, 8>;
+pub type Machine = StarkMachine<BabyBearPoseidon2, RiscvAir<Val>>;
+pub type ProvingKey = StarkProvingKey<BabyBearPoseidon2>;
+pub type VerifyingKey = StarkVerifyingKey<BabyBearPoseidon2>;
 
 fn trace_checkpoint(
     program: Program,
@@ -44,6 +51,7 @@ fn trace_checkpoint(
 // It computes the checkpoints to be sent to the workers
 pub fn compute_checkpoints(
     stdin: &SP1Stdin,
+    program: &Program,
     nb_workers: usize,
 ) -> Result<
     (
@@ -56,8 +64,6 @@ pub fn compute_checkpoints(
 > {
     log::info!("Computing checkpoints");
     let opts = SP1CoreOpts::default();
-
-    let program = Program::from(ELF);
 
     // Execute the program.
     let mut runtime = Runtime::new(program.clone(), opts);
@@ -116,20 +122,19 @@ pub fn compute_checkpoints(
 // This is the entry point of the worker
 // It commits the checkpoints and returns the commitments and the public values of the shards
 pub fn commit(
+    program: &Program,
+    machine: &StarkMachine<BabyBearPoseidon2, RiscvAir<Val>>,
     mut checkpoint: Checkpoint,
     nb_checkpoints: usize,
     public_values: PublicValues<u32, u32>,
     shard_batch_size: usize,
     shard_size: usize,
 ) -> Result<(Commitments, Vec<ShardsPublicValues>), WorkerError> {
-    let config = CoreSC::default();
     let sharding_config = ShardingConfig::default();
 
     let mut opts = SP1CoreOpts::default();
     opts.shard_batch_size = shard_batch_size;
     opts.shard_size = shard_size;
-
-    let program = Program::from(ELF);
 
     let mut commitments_vec = Vec::new();
     let mut shards_public_values_vec = Vec::new();
@@ -145,8 +150,6 @@ pub fn commit(
 
         let (mut record, new_checkpoint) = trace_checkpoint(program.clone(), checkpoint, opts);
         record.public_values = public_values;
-
-        let machine = RiscvAir::machine(config.clone());
 
         let checkpoint_shards =
             tracing::info_span!("shard").in_scope(|| machine.shard(record, &sharding_config));
@@ -173,18 +176,12 @@ pub fn commit(
 
 // When every worker has committed the shards, the orchestrator can observe the commitments
 pub fn observe_commitments(
+    machine: &StarkMachine<BabyBearPoseidon2, RiscvAir<Val>>,
+    vk: &StarkVerifyingKey<BabyBearPoseidon2>,
     commitments: Commitments,
     shards_public_values: Vec<ShardsPublicValues>,
 ) -> Challenger {
     log::info!("Observing commitments");
-
-    let config = CoreSC::default();
-
-    let program = Program::from(ELF);
-
-    // Setup the machine.
-    let machine = RiscvAir::machine(config.clone());
-    let (_pk, vk) = machine.setup(&program);
 
     let mut challenger = machine.config().challenger();
 
@@ -202,6 +199,9 @@ pub fn observe_commitments(
 
 // The workers can now prove the shards thanks to the challenger sent by the orchestrator
 pub fn prove(
+    program: &Program,
+    machine: &StarkMachine<BabyBearPoseidon2, RiscvAir<Val>>,
+    pk: &StarkProvingKey<BabyBearPoseidon2>,
     mut checkpoint: Checkpoint,
     nb_checkpoints: usize,
     public_values: PublicValues<u32, u32>,
@@ -209,18 +209,11 @@ pub fn prove(
     shard_size: usize,
     challenger: Challenger,
 ) -> Result<PartialProofs, WorkerError> {
-    let config = CoreSC::default();
-
     let sharding_config = ShardingConfig::default();
 
     let mut opts = SP1CoreOpts::default();
     opts.shard_batch_size = shard_batch_size;
     opts.shard_size = shard_size;
-
-    let program = Program::from(ELF);
-
-    let machine = RiscvAir::machine(config.clone());
-    let (pk, _vk) = machine.setup(&program);
 
     let mut processed_checkpoints = 0;
 

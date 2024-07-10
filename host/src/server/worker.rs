@@ -1,8 +1,8 @@
 use crate::ProverState;
 use raiko_lib::prover::{ProverError, WorkerError};
 use sp1_driver::{
-    sp1_specifics::Challenger, RequestData, WorkerProtocol, WorkerRequest, WorkerResponse,
-    WorkerSocket,
+    sp1_specifics::{Challenger, CoreSC, Machine, Program, ProvingKey, RiscvAir},
+    RequestData, WorkerProtocol, WorkerRequest, WorkerResponse, WorkerSocket, ELF,
 };
 use tokio::net::TcpListener;
 use tracing::{error, info, warn};
@@ -45,17 +45,33 @@ async fn listen_worker(state: ProverState) {
 }
 
 async fn handle_worker_socket(mut socket: WorkerSocket) -> Result<(), ProverError> {
+    let program = Program::from(ELF);
+    let config = CoreSC::default();
+
+    let machine = RiscvAir::machine(config.clone());
+    let (pk, _vk) = machine.setup(&program);
+
     while let Ok(protocol) = socket.receive().await {
         match protocol {
             WorkerProtocol::Request(request) => match request {
                 WorkerRequest::Ping => handle_ping(&mut socket).await?,
                 WorkerRequest::Commit(request_data) => {
-                    handle_commit(&mut socket, request_data).await?
+                    handle_commit(&mut socket, &program, &machine, request_data).await?
                 }
                 WorkerRequest::Prove {
                     request_data,
                     challenger,
-                } => handle_prove(&mut socket, request_data, challenger).await?,
+                } => {
+                    handle_prove(
+                        &mut socket,
+                        &program,
+                        &machine,
+                        &pk,
+                        request_data,
+                        challenger,
+                    )
+                    .await?
+                }
             },
             _ => Err(WorkerError::InvalidRequest)?,
         }
@@ -72,9 +88,13 @@ async fn handle_ping(socket: &mut WorkerSocket) -> Result<(), WorkerError> {
 
 async fn handle_commit(
     socket: &mut WorkerSocket,
+    program: &Program,
+    machine: &Machine,
     request_data: RequestData,
 ) -> Result<(), WorkerError> {
     let (commitments, shards_public_values) = sp1_driver::sp1_specifics::commit(
+        program,
+        machine,
         request_data.checkpoint,
         request_data.nb_checkpoints,
         request_data.public_values,
@@ -92,10 +112,16 @@ async fn handle_commit(
 
 async fn handle_prove(
     socket: &mut WorkerSocket,
+    program: &Program,
+    machine: &Machine,
+    pk: &ProvingKey,
     request_data: RequestData,
     challenger: Challenger,
 ) -> Result<(), WorkerError> {
     let proof = sp1_driver::sp1_specifics::prove(
+        program,
+        machine,
+        pk,
         request_data.checkpoint,
         request_data.nb_checkpoints,
         request_data.public_values,
