@@ -1,5 +1,3 @@
-use std::time::Instant;
-
 use p3_challenger::{CanObserve, DuplexChallenger};
 use p3_symmetric::Hash;
 
@@ -73,20 +71,14 @@ pub fn compute_checkpoints(
         runtime.write_proof(proof.0.clone(), proof.1.clone());
     }
 
-    let checkpoints_start = Instant::now();
-
     let mut checkpoints_states = Vec::new();
 
     // Execute the program, saving checkpoints at the start of every `shard_batch_size` cycle range.
     let (public_values_stream, public_values) = loop {
-        let checkpoint_start = Instant::now();
-
         // Execute the runtime until we reach a checkpoint.
         let (checkpoint, done) = runtime
             .execute_state()
             .map_err(SP1CoreProverError::ExecutionError)?;
-
-        log::debug!("Checkpoint took {:?}", checkpoint_start.elapsed());
 
         checkpoints_states.push(checkpoint);
 
@@ -99,9 +91,10 @@ pub fn compute_checkpoints(
         }
     };
 
-    log::debug!("Total checkpointing took {:?}", checkpoints_start.elapsed());
-
-    log::info!("Nb checkpoints: {}", checkpoints_states.len());
+    log::info!(
+        "Nb shards: {}",
+        checkpoints_states.len() * opts.shard_batch_size
+    );
 
     let nb_checkpoints_per_workers =
         (checkpoints_states.len() as f64 / nb_workers as f64).ceil() as usize;
@@ -242,20 +235,14 @@ pub fn prove(
 
                 let config = machine.config();
 
-                let commit_main_start = Instant::now();
-
                 let shard_data =
                     LocalProver::commit_main(config, &machine, &shard, shard.index() as usize);
-
-                log::debug!("Commit main took {:?}", commit_main_start.elapsed());
 
                 let chip_ordering = shard_data.chip_ordering.clone();
                 let ordered_chips = machine
                     .shard_chips_ordered(&chip_ordering)
                     .collect::<Vec<_>>()
                     .to_vec();
-
-                let prove_shard_start = Instant::now();
 
                 let proof = LocalProver::prove_shard(
                     config,
@@ -264,8 +251,6 @@ pub fn prove(
                     shard_data,
                     &mut challenger.clone(),
                 );
-
-                log::debug!("Prove shard took {:?}", prove_shard_start.elapsed());
 
                 proof
             })
