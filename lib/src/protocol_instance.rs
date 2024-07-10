@@ -39,17 +39,6 @@ impl ProtocolInstance {
                 .taiko
                 .blob_commitment
                 .as_ref()
-                .expect("no blob commitment")
-                .clone();
-
-            let versioned_hash =
-                commitment_to_version_hash(&commitment.clone().try_into().unwrap());
-
-            versioned_hash
-            /* let commitment = input
-                .taiko
-                .blob_commitment
-                .as_ref()
                 .expect("no blob commitment");
             let versioned_hash =
                 commitment_to_version_hash(&commitment.clone().try_into().unwrap());
@@ -66,7 +55,7 @@ impl ProtocolInstance {
                     );
                 }
             };
-            versioned_hash */
+            versioned_hash
         } else {
             TxHash::from(keccak(input.taiko.tx_data.as_slice()))
         };

@@ -47,7 +47,7 @@ impl WorkerSocket {
     }
 
     // TODO: Add a timeout
-    pub async fn read_data(&mut self) -> Result<Vec<u8>, WorkerError> {
+    async fn read_data(&mut self) -> Result<Vec<u8>, WorkerError> {
         let size = self.socket.read_u64().await? as usize;
 
         log::debug!("Receiving data with size: {:?}", size);
