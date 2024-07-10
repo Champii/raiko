@@ -1,8 +1,8 @@
 use crate::ProverState;
 use raiko_lib::prover::{ProverError, WorkerError};
 use sp1_driver::{
-    sp1_specifics::{Challenger, Checkpoint, PublicValues},
-    WorkerProtocol, WorkerRequest, WorkerResponse, WorkerSocket,
+    sp1_specifics::Challenger, RequestData, WorkerProtocol, WorkerRequest, WorkerResponse,
+    WorkerSocket,
 };
 use tokio::net::TcpListener;
 use tracing::{error, info, warn};
@@ -49,42 +49,13 @@ async fn handle_worker_socket(mut socket: WorkerSocket) -> Result<(), ProverErro
         match protocol {
             WorkerProtocol::Request(request) => match request {
                 WorkerRequest::Ping => handle_ping(&mut socket).await?,
-                WorkerRequest::Commit {
-                    checkpoint,
-                    nb_checkpoints,
-                    public_values,
-                    shard_batch_size,
-                    shard_size,
-                } => {
-                    handle_commit(
-                        &mut socket,
-                        checkpoint,
-                        nb_checkpoints,
-                        public_values,
-                        shard_batch_size,
-                        shard_size,
-                    )
-                    .await?
+                WorkerRequest::Commit(request_data) => {
+                    handle_commit(&mut socket, request_data).await?
                 }
                 WorkerRequest::Prove {
-                    checkpoint,
-                    nb_checkpoints,
-                    public_values,
-                    shard_batch_size,
-                    shard_size,
+                    request_data,
                     challenger,
-                } => {
-                    handle_prove(
-                        &mut socket,
-                        checkpoint,
-                        nb_checkpoints,
-                        public_values,
-                        shard_batch_size,
-                        shard_size,
-                        challenger,
-                    )
-                    .await?
-                }
+                } => handle_prove(&mut socket, request_data, challenger).await?,
             },
             _ => Err(WorkerError::InvalidRequest)?,
         }
@@ -101,18 +72,14 @@ async fn handle_ping(socket: &mut WorkerSocket) -> Result<(), WorkerError> {
 
 async fn handle_commit(
     socket: &mut WorkerSocket,
-    checkpoint: Checkpoint,
-    nb_checkpoints: usize,
-    public_values: PublicValues<u32, u32>,
-    shard_batch_size: usize,
-    shard_size: usize,
+    request_data: RequestData,
 ) -> Result<(), WorkerError> {
     let (commitments, shards_public_values) = sp1_driver::sp1_specifics::commit(
-        checkpoint,
-        nb_checkpoints,
-        public_values,
-        shard_batch_size,
-        shard_size,
+        request_data.checkpoint,
+        request_data.nb_checkpoints,
+        request_data.public_values,
+        request_data.shard_batch_size,
+        request_data.shard_size,
     )?;
 
     socket
@@ -125,19 +92,15 @@ async fn handle_commit(
 
 async fn handle_prove(
     socket: &mut WorkerSocket,
-    checkpoint: Checkpoint,
-    nb_checkpoints: usize,
-    public_values: PublicValues<u32, u32>,
-    shard_batch_size: usize,
-    shard_size: usize,
+    request_data: RequestData,
     challenger: Challenger,
 ) -> Result<(), WorkerError> {
     let proof = sp1_driver::sp1_specifics::prove(
-        checkpoint,
-        nb_checkpoints,
-        public_values,
-        shard_batch_size,
-        shard_size,
+        request_data.checkpoint,
+        request_data.nb_checkpoints,
+        request_data.public_values,
+        request_data.shard_batch_size,
+        request_data.shard_size,
         challenger,
     )?;
 

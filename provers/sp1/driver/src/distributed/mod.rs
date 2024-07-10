@@ -4,5 +4,6 @@ mod worker;
 
 pub use prover::Sp1DistributedProver;
 pub use worker::{
-    WorkerEnvelope, WorkerPool, WorkerProtocol, WorkerRequest, WorkerResponse, WorkerSocket,
+    RequestData, WorkerEnvelope, WorkerPool, WorkerProtocol, WorkerRequest, WorkerResponse,
+    WorkerSocket,
 };

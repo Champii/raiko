@@ -9,7 +9,7 @@ use tokio::sync::RwLock;
 
 use crate::{
     sp1_specifics::{Challenger, Checkpoint, Commitments, PartialProofs, ShardsPublicValues},
-    WorkerRequest, WorkerResponse, WorkerSocket,
+    RequestData, WorkerRequest, WorkerResponse, WorkerSocket,
 };
 
 pub struct WorkerPool {
@@ -31,12 +31,14 @@ impl WorkerPool {
     ) -> Result<(Commitments, Vec<ShardsPublicValues>), WorkerError> {
         let requests = checkpoints
             .into_iter()
-            .map(|(checkpoint, nb_checkpoints)| WorkerRequest::Commit {
-                checkpoint,
-                nb_checkpoints,
-                public_values,
-                shard_batch_size: opts.shard_batch_size,
-                shard_size: opts.shard_size,
+            .map(|(checkpoint, nb_checkpoints)| {
+                WorkerRequest::Commit(RequestData {
+                    checkpoint,
+                    nb_checkpoints,
+                    public_values,
+                    shard_batch_size: opts.shard_batch_size,
+                    shard_size: opts.shard_size,
+                })
             })
             .collect();
 
@@ -71,11 +73,13 @@ impl WorkerPool {
         let requests = checkpoints
             .into_iter()
             .map(|(checkpoint, nb_checkpoints)| WorkerRequest::Prove {
-                checkpoint,
-                nb_checkpoints,
-                public_values,
-                shard_batch_size: opts.shard_batch_size,
-                shard_size: opts.shard_size,
+                request_data: RequestData {
+                    checkpoint,
+                    nb_checkpoints,
+                    public_values: public_values.clone(),
+                    shard_batch_size: opts.shard_batch_size,
+                    shard_size: opts.shard_size,
+                },
                 challenger: challenger.clone(),
             })
             .collect();
