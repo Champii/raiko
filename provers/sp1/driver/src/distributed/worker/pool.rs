@@ -103,6 +103,7 @@ impl WorkerPool {
 
         let mut set = JoinSet::new();
 
+        // Distribute one request to each available workers
         for (request_idx, (request, (worker_idx, worker))) in requests
             .clone()
             .into_iter()
@@ -125,11 +126,12 @@ impl WorkerPool {
 
         let mut results = Vec::new();
         let mut available_workers = VecDeque::new();
-        let mut tasks_to_redistribute = VecDeque::new();
+        let mut requests_to_redistribute = VecDeque::new();
         let mut failed_workers = Vec::new();
 
+        // If there is more requests than workers, we need to redistribute them later
         if requests.len() > self.workers.len() {
-            tasks_to_redistribute.extend(self.workers.len()..requests.len());
+            requests_to_redistribute.extend(self.workers.len()..requests.len());
         }
 
         while let Some(res) = set.join_next().await {
@@ -141,8 +143,9 @@ impl WorkerPool {
 
                     results.push((request_idx, response));
 
-                    if !tasks_to_redistribute.is_empty() {
-                        let request_idx = tasks_to_redistribute.pop_front().unwrap();
+                    // If there is another task to redistribute, do it right away
+                    if !requests_to_redistribute.is_empty() {
+                        let request_idx = requests_to_redistribute.pop_front().unwrap();
                         let request = requests[request_idx].clone();
                         let worker = Arc::clone(self.workers.get(&worker_idx).unwrap());
 
@@ -171,8 +174,10 @@ impl WorkerPool {
                         return Err(WorkerError::AllWorkersFailed);
                     }
 
+                    // If no other workers finished, push back the request to be picked up when a
+                    // worker is available
                     if available_workers.is_empty() {
-                        tasks_to_redistribute.push_back(request_idx);
+                        requests_to_redistribute.push_back(request_idx);
 
                         continue;
                     }

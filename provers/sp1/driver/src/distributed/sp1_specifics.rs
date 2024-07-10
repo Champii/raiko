@@ -157,7 +157,7 @@ pub fn commit(
 
         let shards_public_values = checkpoint_shards
             .iter()
-            .map(|shard| shard.public_values::<Val>())
+            .map(|shard| shard.public_values::<Val>()[0..machine.num_pv_elts()].to_vec())
             .collect::<Vec<_>>();
 
         commitments_vec.extend(commitments);
@@ -194,7 +194,7 @@ pub fn observe_commitments(
         commitments.into_iter().zip(shards_public_values.iter())
     {
         challenger.observe(commitment);
-        challenger.observe_slice(&shard_public_values[0..machine.num_pv_elts()]);
+        challenger.observe_slice(&shard_public_values[..]);
     }
 
     challenger
