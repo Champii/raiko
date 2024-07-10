@@ -1,4 +1,7 @@
-use std::sync::Arc;
+use std::{
+    collections::{BTreeMap, VecDeque},
+    sync::Arc,
+};
 
 use raiko_lib::prover::WorkerError;
 use sp1_core::{air::PublicValues, utils::SP1CoreOpts};
@@ -10,7 +13,7 @@ use crate::{
 };
 
 pub struct WorkerPool {
-    workers: Vec<Arc<RwLock<WorkerSocket>>>,
+    workers: BTreeMap<usize, Arc<RwLock<WorkerSocket>>>,
 }
 
 impl WorkerPool {
@@ -100,38 +103,111 @@ impl WorkerPool {
 
         let mut set = JoinSet::new();
 
-        for (i, (request, worker)) in requests.into_iter().zip(self.workers.iter()).enumerate() {
+        for (request_idx, (request, (worker_idx, worker))) in requests
+            .clone()
+            .into_iter()
+            .zip(self.workers.iter())
+            .enumerate()
+        {
             let worker = Arc::clone(worker);
+            let worker_idx = worker_idx.clone();
 
-            log::info!("Sp1 Distributed: Sending request to worker {}", i);
+            log::info!("Sp1 Distributed: Sending request to worker {}", request_idx);
 
-            set.spawn(async move { worker.write().await.request(request).await });
+            set.spawn(async move {
+                (
+                    request_idx,
+                    worker_idx,
+                    worker.write().await.request(request).await,
+                )
+            });
         }
 
         let mut results = Vec::new();
+        let mut available_workers = VecDeque::new();
+        let mut tasks_to_redistribute = VecDeque::new();
+        let mut failed_workers = Vec::new();
+
+        if requests.len() > self.workers.len() {
+            tasks_to_redistribute.extend(self.workers.len()..requests.len());
+        }
 
         while let Some(res) = set.join_next().await {
-            let out = res.map_err(|_e| WorkerError::AllWorkersFailed)?;
+            let (request_idx, worker_idx, out) = res.map_err(|_e| WorkerError::AllWorkersFailed)?;
 
             match out {
                 Ok(response) => {
-                    log::info!(
-                        "Sp1 Distributed: Got response from worker {}",
-                        results.len()
-                    );
+                    log::info!("Sp1 Distributed: Got response from worker {}", request_idx);
 
-                    results.push(response);
+                    results.push((request_idx, response));
+
+                    if !tasks_to_redistribute.is_empty() {
+                        let request_idx = tasks_to_redistribute.pop_front().unwrap();
+                        let request = requests[request_idx].clone();
+                        let worker = Arc::clone(self.workers.get(&worker_idx).unwrap());
+
+                        log::info!(
+                            "Sp1 Distributed: Redistributing task to worker {}",
+                            worker_idx
+                        );
+
+                        set.spawn(async move {
+                            (
+                                request_idx,
+                                worker_idx,
+                                worker.write().await.request(request).await,
+                            )
+                        });
+                    } else {
+                        available_workers.push_back(worker_idx);
+                    }
                 }
                 Err(_e) => {
+                    log::warn!("Sp1 Distributed: Worker {} failed", request_idx);
+
+                    failed_workers.push(worker_idx);
+
+                    if available_workers.is_empty() {
+                        tasks_to_redistribute.push_back(request_idx);
+
+                        continue;
+                    }
+
+                    let worker_id = available_workers.pop_front().unwrap();
+                    let request = requests[request_idx].clone();
+                    let worker = Arc::clone(self.workers.get(&worker_id).unwrap());
+
+                    log::info!(
+                        "Sp1 Distributed: Redistributing task to worker {}",
+                        worker_id
+                    );
+
+                    set.spawn(async move {
+                        (
+                            request_idx,
+                            worker_id,
+                            worker.write().await.request(request).await,
+                        )
+                    });
+
                     return Err(WorkerError::AllWorkersFailed);
                 }
             }
         }
 
+        results.sort_by_key(|(i, _)| *i);
+
+        let results = results.into_iter().map(|(_, response)| response).collect();
+
+        // removing the failed workers from the pool
+        for worker_id in failed_workers {
+            self.workers.remove(&worker_id);
+        }
+
         Ok(results)
     }
 
-    async fn spawn_workers() -> Result<Vec<Arc<RwLock<WorkerSocket>>>, WorkerError> {
+    async fn spawn_workers() -> Result<BTreeMap<usize, Arc<RwLock<WorkerSocket>>>, WorkerError> {
         let ip_list_string = std::fs::read_to_string("distributed.json")
             .expect("Sp1 Distributed: Need a `distributed.json` file with a list of IP:PORT");
 
@@ -139,10 +215,10 @@ impl WorkerPool {
             "Sp1 Distributed: Invalid JSON for `distributed.json`. need an array of IP:PORT",
         );
 
-        let mut workers = Vec::new();
+        let mut workers = BTreeMap::new();
 
         // try to connect to each worker to make sure they are reachable
-        for ip in ip_list.into_iter() {
+        for (i, ip) in ip_list.into_iter().enumerate() {
             let Ok(mut worker) = WorkerSocket::connect(&ip).await else {
                 log::warn!("Sp1 Distributed: Worker at {} is not reachable. Removing from the list for this task", ip);
 
@@ -155,7 +231,7 @@ impl WorkerPool {
                 continue;
             }
 
-            workers.push(Arc::new(RwLock::new(worker)));
+            workers.insert(i, Arc::new(RwLock::new(worker)));
         }
 
         if workers.len() == 0 {
