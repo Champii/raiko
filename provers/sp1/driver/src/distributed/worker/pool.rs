@@ -167,6 +167,10 @@ impl WorkerPool {
 
                     failed_workers.push(worker_idx);
 
+                    if failed_workers.len() == self.workers.len() {
+                        return Err(WorkerError::AllWorkersFailed);
+                    }
+
                     if available_workers.is_empty() {
                         tasks_to_redistribute.push_back(request_idx);
 
@@ -189,8 +193,6 @@ impl WorkerPool {
                             worker.write().await.request(request).await,
                         )
                     });
-
-                    return Err(WorkerError::AllWorkersFailed);
                 }
             }
         }
