@@ -68,24 +68,26 @@ async fn handle_commit(socket: &mut WorkerSocket) -> Result<(), WorkerError> {
     let request = socket.receive().await?;
 
     match request {
-        WorkerProtocol::Request(WorkerRequest::Commit(
+        WorkerProtocol::Request(WorkerRequest::Commit {
             checkpoint,
             nb_checkpoints,
             public_values,
             shard_batch_size,
-        )) => {
-            let (commitment, shards_public_values) = sp1_driver::sp1_specifics::commit(
+            shard_size,
+        }) => {
+            let (commitments, shards_public_values) = sp1_driver::sp1_specifics::commit(
                 checkpoint,
                 nb_checkpoints,
                 public_values,
                 shard_batch_size,
+                shard_size,
             )?;
 
             socket
-                .send(WorkerProtocol::Response(WorkerResponse::Commit(
-                    commitment,
+                .send(WorkerProtocol::Response(WorkerResponse::Commitment {
+                    commitments,
                     shards_public_values,
-                )))
+                }))
                 .await?;
 
             Ok(())
@@ -98,23 +100,25 @@ async fn handle_prove(socket: &mut WorkerSocket) -> Result<(), WorkerError> {
     let request = socket.receive().await?;
 
     match request {
-        WorkerProtocol::Request(WorkerRequest::Prove(
+        WorkerProtocol::Request(WorkerRequest::Prove {
             checkpoint,
             nb_checkpoints,
             public_values,
             shard_batch_size,
+            shard_size,
             challenger,
-        )) => {
+        }) => {
             let proof = sp1_driver::sp1_specifics::prove(
                 checkpoint,
                 nb_checkpoints,
                 public_values,
                 shard_batch_size,
+                shard_size,
                 challenger,
             )?;
 
             socket
-                .send(WorkerProtocol::Response(WorkerResponse::Prove(proof)))
+                .send(WorkerProtocol::Response(WorkerResponse::Proof(proof)))
                 .await?;
 
             Ok(())

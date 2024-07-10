@@ -63,18 +63,31 @@ impl Display for WorkerProtocol {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum WorkerRequest {
     Ping,
-    Commit(Checkpoint, usize, PublicValues<u32, u32>, usize),
-    Prove(Checkpoint, usize, PublicValues<u32, u32>, usize, Challenger),
+    Commit {
+        checkpoint: Checkpoint,
+        nb_checkpoints: usize,
+        public_values: PublicValues<u32, u32>,
+        shard_batch_size: usize,
+        shard_size: usize,
+    },
+    Prove {
+        checkpoint: Checkpoint,
+        nb_checkpoints: usize,
+        public_values: PublicValues<u32, u32>,
+        shard_batch_size: usize,
+        shard_size: usize,
+        challenger: Challenger,
+    },
 }
 
 impl Display for WorkerRequest {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
             WorkerRequest::Ping => write!(f, "Ping"),
-            WorkerRequest::Commit(_, _, _, _) => {
+            WorkerRequest::Commit { .. } => {
                 write!(f, "Commit")
             }
-            WorkerRequest::Prove(_, _, _, _, _) => write!(f, "Prove"),
+            WorkerRequest::Prove { .. } => write!(f, "Prove"),
         }
     }
 }
@@ -82,16 +95,19 @@ impl Display for WorkerRequest {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum WorkerResponse {
     Pong,
-    Commit(Commitments, Vec<ShardsPublicValues>),
-    Prove(PartialProofs),
+    Commitment {
+        commitments: Commitments,
+        shards_public_values: Vec<ShardsPublicValues>,
+    },
+    Proof(PartialProofs),
 }
 
 impl Display for WorkerResponse {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
             WorkerResponse::Pong => write!(f, "Pong"),
-            WorkerResponse::Commit(_, _) => write!(f, "Commit"),
-            WorkerResponse::Prove(_) => write!(f, "Prove"),
+            WorkerResponse::Commitment { .. } => write!(f, "Commit"),
+            WorkerResponse::Proof(_) => write!(f, "Prove"),
         }
     }
 }

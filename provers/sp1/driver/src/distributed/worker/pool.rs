@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use raiko_lib::prover::WorkerError;
-use sp1_core::air::PublicValues;
+use sp1_core::{air::PublicValues, utils::SP1CoreOpts};
 use tokio::sync::RwLock;
 
 use crate::{
@@ -24,54 +24,56 @@ impl WorkerPool {
         &mut self,
         checkpoints: Vec<(Checkpoint, usize)>,
         public_values: PublicValues<u32, u32>,
-        shard_batch_size: usize,
+        opts: SP1CoreOpts,
     ) -> Result<(Commitments, Vec<ShardsPublicValues>), WorkerError> {
         let requests = checkpoints
             .into_iter()
-            .map(|(checkpoint, nb_checkpoints)| {
-                WorkerRequest::Commit(
-                    checkpoint,
-                    nb_checkpoints,
-                    public_values.clone(),
-                    shard_batch_size,
-                )
+            .map(|(checkpoint, nb_checkpoints)| WorkerRequest::Commit {
+                checkpoint,
+                nb_checkpoints,
+                public_values,
+                shard_batch_size: opts.shard_batch_size,
+                shard_size: opts.shard_size,
             })
             .collect();
 
         let commitments_response = self.distribute_work(requests).await?;
 
-        let mut commitments = Vec::new();
-        let mut shards_public_values = Vec::new();
+        let mut commitments_vec = Vec::new();
+        let mut shards_public_values_vec = Vec::new();
 
         for response in commitments_response {
-            if let WorkerResponse::Commit(commitment, got_shards_public_values) = response {
-                commitments.extend(commitment);
-                shards_public_values.extend(got_shards_public_values);
+            if let WorkerResponse::Commitment {
+                commitments,
+                shards_public_values,
+            } = response
+            {
+                commitments_vec.extend(commitments);
+                shards_public_values_vec.extend(shards_public_values);
             } else {
                 return Err(WorkerError::InvalidResponse);
             }
         }
 
-        Ok((commitments, shards_public_values))
+        Ok((commitments_vec, shards_public_values_vec))
     }
 
     pub async fn prove(
         &mut self,
         checkpoints: Vec<(Checkpoint, usize)>,
         public_values: PublicValues<u32, u32>,
-        shard_batch_size: usize,
+        opts: SP1CoreOpts,
         challenger: Challenger,
     ) -> Result<PartialProofs, WorkerError> {
         let requests = checkpoints
             .into_iter()
-            .map(|(checkpoint, nb_checkpoints)| {
-                WorkerRequest::Prove(
-                    checkpoint,
-                    nb_checkpoints,
-                    public_values,
-                    shard_batch_size,
-                    challenger.clone(),
-                )
+            .map(|(checkpoint, nb_checkpoints)| WorkerRequest::Prove {
+                checkpoint,
+                nb_checkpoints,
+                public_values,
+                shard_batch_size: opts.shard_batch_size,
+                shard_size: opts.shard_size,
+                challenger: challenger.clone(),
             })
             .collect();
 
@@ -80,7 +82,7 @@ impl WorkerPool {
         let mut proofs = Vec::new();
 
         for response in proofs_response {
-            if let WorkerResponse::Prove(partial_proof) = response {
+            if let WorkerResponse::Proof(partial_proof) = response {
                 proofs.extend(partial_proof);
             } else {
                 return Err(WorkerError::InvalidResponse);

@@ -50,15 +50,12 @@ pub fn compute_checkpoints(
         Vec<(Checkpoint, usize)>,
         Vec<u8>,
         PublicValues<u32, u32>,
-        usize,
+        SP1CoreOpts,
     ),
     SP1CoreProverError,
 > {
     log::info!("Computing checkpoints");
-    let mut opts = SP1CoreOpts::default();
-
-    // FIXME: Is this the most efficient ?
-    opts.shard_batch_size = 1;
+    let opts = SP1CoreOpts::default();
 
     let program = Program::from(ELF);
 
@@ -100,10 +97,11 @@ pub fn compute_checkpoints(
 
     log::info!("Nb checkpoints: {}", checkpoints_states.len());
 
-    let shard_batch_size = (checkpoints_states.len() as f64 / nb_workers as f64).ceil() as usize;
+    let nb_checkpoints_per_workers =
+        (checkpoints_states.len() as f64 / nb_workers as f64).ceil() as usize;
 
     let checkpoints_states = checkpoints_states
-        .chunks(shard_batch_size)
+        .chunks(nb_checkpoints_per_workers)
         .map(|chunk| (chunk[0].clone(), chunk.len()))
         .collect::<Vec<_>>();
 
@@ -111,7 +109,7 @@ pub fn compute_checkpoints(
         checkpoints_states,
         public_values_stream,
         public_values,
-        opts.shard_batch_size,
+        opts,
     ))
 }
 
@@ -122,12 +120,14 @@ pub fn commit(
     nb_checkpoints: usize,
     public_values: PublicValues<u32, u32>,
     shard_batch_size: usize,
+    shard_size: usize,
 ) -> Result<(Commitments, Vec<ShardsPublicValues>), WorkerError> {
     let config = CoreSC::default();
     let sharding_config = ShardingConfig::default();
-    let mut opts = SP1CoreOpts::default();
 
+    let mut opts = SP1CoreOpts::default();
     opts.shard_batch_size = shard_batch_size;
+    opts.shard_size = shard_size;
 
     let program = Program::from(ELF);
 
@@ -206,14 +206,16 @@ pub fn prove(
     nb_checkpoints: usize,
     public_values: PublicValues<u32, u32>,
     shard_batch_size: usize,
+    shard_size: usize,
     challenger: Challenger,
 ) -> Result<PartialProofs, WorkerError> {
     let config = CoreSC::default();
-    let mut opts = SP1CoreOpts::default();
-
-    opts.shard_batch_size = shard_batch_size;
 
     let sharding_config = ShardingConfig::default();
+
+    let mut opts = SP1CoreOpts::default();
+    opts.shard_batch_size = shard_batch_size;
+    opts.shard_size = shard_size;
 
     let program = Program::from(ELF);
 

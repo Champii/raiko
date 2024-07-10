@@ -67,19 +67,19 @@ impl Sp1DistributedOrchestrator {
     pub async fn prove(stdin: SP1Stdin) -> ProverResult<SP1ProofWithPublicValues<PartialProofs>> {
         let mut worker_pool = WorkerPool::new().await?;
 
-        let (checkpoints, public_values_stream, public_values, shard_batch_size) =
+        let (checkpoints, public_values_stream, public_values, opts) =
             sp1_specifics::compute_checkpoints(&stdin, worker_pool.len()).map_err(|e| {
                 ProverError::GuestError(format!("Error while computing checkpoints: {}", e))
             })?;
 
         let (commitments, shards_public_values) = worker_pool
-            .commit(checkpoints.clone(), public_values, shard_batch_size)
+            .commit(checkpoints.clone(), public_values, opts)
             .await?;
 
         let challenger = sp1_specifics::observe_commitments(commitments, shards_public_values);
 
         let partial_proofs = worker_pool
-            .prove(checkpoints, public_values, shard_batch_size, challenger)
+            .prove(checkpoints, public_values, opts, challenger)
             .await?;
 
         Ok(SP1ProofWithPublicValues {
