@@ -6,9 +6,9 @@ use raiko_lib::{
 };
 use sp1_sdk::{ProverClient, SP1ProofWithPublicValues, SP1PublicValues, SP1Stdin};
 
-use crate::{Sp1Response, WorkerPool, ELF};
+use crate::{sp1_specifics, Sp1Response, WorkerPool, ELF};
 
-use super::sp1_specifics::{compute_checkpoints, observe_commitments, PartialProof};
+use super::sp1_specifics::PartialProofs;
 
 pub struct Sp1DistributedProver;
 
@@ -64,11 +64,11 @@ impl Prover for Sp1DistributedProver {
 pub struct Sp1DistributedOrchestrator;
 
 impl Sp1DistributedOrchestrator {
-    pub async fn prove(stdin: SP1Stdin) -> ProverResult<SP1ProofWithPublicValues<PartialProof>> {
+    pub async fn prove(stdin: SP1Stdin) -> ProverResult<SP1ProofWithPublicValues<PartialProofs>> {
         let mut worker_pool = WorkerPool::new().await?;
 
         let (checkpoints, public_values_stream, public_values, shard_batch_size) =
-            compute_checkpoints(&stdin, worker_pool.len()).map_err(|e| {
+            sp1_specifics::compute_checkpoints(&stdin, worker_pool.len()).map_err(|e| {
                 ProverError::GuestError(format!("Error while computing checkpoints: {}", e))
             })?;
 
@@ -76,7 +76,7 @@ impl Sp1DistributedOrchestrator {
             .commit(checkpoints.clone(), public_values, shard_batch_size)
             .await?;
 
-        let challenger = observe_commitments(commitments, shards_public_values);
+        let challenger = sp1_specifics::observe_commitments(commitments, shards_public_values);
 
         let partial_proofs = worker_pool
             .prove(checkpoints, public_values, shard_batch_size, challenger)

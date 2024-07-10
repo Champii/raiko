@@ -1,12 +1,10 @@
 use raiko_lib::prover::WorkerError;
-use tokio::io::{AsyncReadExt, AsyncWriteExt, BufWriter};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
-use crate::{WorkerEnvelope, WorkerProtocol};
+use crate::{WorkerEnvelope, WorkerProtocol, WorkerRequest, WorkerResponse};
 
-use super::pool::{WorkerRequest, WorkerResponse};
-
-// 64MB
-const PAYLOAD_MAX_SIZE: usize = 1 << 26;
+// 128MB
+const PAYLOAD_MAX_SIZE: usize = 1 << 27;
 
 pub struct WorkerSocket {
     socket: tokio::net::TcpStream,
@@ -28,9 +26,11 @@ impl WorkerSocket {
 
         let data = bincode::serialize(&envelope)?;
 
-        /* if data.len() > PAYLOAD_MAX_SIZE {
+        log::debug!("Sending data with size: {:?}", data.len());
+
+        if data.len() > PAYLOAD_MAX_SIZE {
             return Err(WorkerError::PayloadTooBig);
-        } */
+        }
 
         self.socket.write_u64(data.len() as u64).await?;
         self.socket.write_all(&data).await?;
@@ -50,13 +50,14 @@ impl WorkerSocket {
     pub async fn read_data(&mut self) -> Result<Vec<u8>, WorkerError> {
         let size = self.socket.read_u64().await? as usize;
 
-        /* if size > PAYLOAD_MAX_SIZE {
+        log::debug!("Receiving data with size: {:?}", size);
+
+        if size > PAYLOAD_MAX_SIZE {
             return Err(WorkerError::PayloadTooBig);
-        } */
+        }
 
         let mut data = Vec::new();
 
-        let mut buf_data = BufWriter::new(&mut data);
         let mut buf = [0; 1024];
         let mut total_read = 0;
 
@@ -64,25 +65,17 @@ impl WorkerSocket {
             match self.socket.read(&mut buf).await {
                 // socket closed
                 Ok(n) if n == 0 => {
-                    if total_read != size {
-                        return Err(WorkerError::IO(std::io::Error::new(
-                            std::io::ErrorKind::UnexpectedEof,
-                            "unexpected EOF",
-                        )));
-                    }
-
-                    buf_data.flush().await?;
-
-                    return Ok(data);
+                    return Err(WorkerError::IO(std::io::Error::new(
+                        std::io::ErrorKind::UnexpectedEof,
+                        "unexpected EOF",
+                    )));
                 }
                 Ok(n) => {
-                    buf_data.write_all(&buf[..n]).await?;
+                    data.extend_from_slice(&buf[..n]);
 
                     total_read += n;
 
                     if total_read == size {
-                        buf_data.flush().await?;
-
                         return Ok(data);
                     }
 
@@ -94,17 +87,6 @@ impl WorkerSocket {
                     return Err(e.into());
                 }
             };
-        }
-    }
-
-    pub async fn ping(&mut self) -> Result<(), WorkerError> {
-        self.send(WorkerProtocol::Ping).await?;
-
-        let response = self.receive().await?;
-
-        match response {
-            WorkerProtocol::Pong => Ok(()),
-            _ => Err(WorkerError::InvalidResponse),
         }
     }
 

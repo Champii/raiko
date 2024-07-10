@@ -1,8 +1,6 @@
 use crate::ProverState;
 use raiko_lib::prover::{ProverError, WorkerError};
-use sp1_driver::{
-    sp1_specifics::Shards, WorkerProtocol, WorkerRequest, WorkerResponse, WorkerSocket,
-};
+use sp1_driver::{WorkerProtocol, WorkerRequest, WorkerResponse, WorkerSocket};
 use tokio::net::TcpListener;
 use tracing::{error, info, warn};
 
@@ -57,12 +55,16 @@ async fn handle_ping(socket: &mut WorkerSocket) -> Result<(), WorkerError> {
     let request = socket.receive().await?;
 
     match request {
-        WorkerProtocol::Ping => socket.send(WorkerProtocol::Pong).await,
+        WorkerProtocol::Request(WorkerRequest::Ping) => {
+            socket
+                .send(WorkerProtocol::Response(WorkerResponse::Pong))
+                .await
+        }
         _ => Err(WorkerError::InvalidResponse),
     }
 }
 
-async fn handle_commit(socket: &mut WorkerSocket) -> Result<Vec<Shards>, WorkerError> {
+async fn handle_commit(socket: &mut WorkerSocket) -> Result<(), WorkerError> {
     let request = socket.receive().await?;
 
     match request {
@@ -72,7 +74,7 @@ async fn handle_commit(socket: &mut WorkerSocket) -> Result<Vec<Shards>, WorkerE
             public_values,
             shard_batch_size,
         )) => {
-            let (shards, commitment, shards_public_values) = sp1_driver::sp1_specifics::commit(
+            let (commitment, shards_public_values) = sp1_driver::sp1_specifics::commit(
                 checkpoint,
                 nb_checkpoints,
                 public_values,
@@ -86,7 +88,7 @@ async fn handle_commit(socket: &mut WorkerSocket) -> Result<Vec<Shards>, WorkerE
                 )))
                 .await?;
 
-            Ok(shards)
+            Ok(())
         }
         _ => Err(WorkerError::InvalidRequest),
     }

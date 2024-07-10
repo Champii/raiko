@@ -1,49 +1,13 @@
-use std::{
-    fmt::{Display, Formatter},
-    sync::Arc,
-};
+use std::sync::Arc;
 
 use raiko_lib::prover::WorkerError;
-use serde::{Deserialize, Serialize};
 use sp1_core::air::PublicValues;
 use tokio::sync::RwLock;
 
 use crate::{
-    sp1_specifics::{Challenger, Checkpoint, Commitments, PartialProof, ShardsPublicValues},
-    WorkerSocket,
+    sp1_specifics::{Challenger, Checkpoint, Commitments, PartialProofs, ShardsPublicValues},
+    WorkerRequest, WorkerResponse, WorkerSocket,
 };
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub enum WorkerRequest {
-    Commit(Checkpoint, usize, PublicValues<u32, u32>, usize),
-    Prove(Checkpoint, usize, PublicValues<u32, u32>, usize, Challenger),
-}
-
-impl Display for WorkerRequest {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        match self {
-            WorkerRequest::Commit(_, _, _, _) => {
-                write!(f, "Commit")
-            }
-            WorkerRequest::Prove(_, _, _, _, _) => write!(f, "Prove"),
-        }
-    }
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub enum WorkerResponse {
-    Commit(Vec<Commitments>, Vec<Vec<ShardsPublicValues>>),
-    Prove(PartialProof),
-}
-
-impl Display for WorkerResponse {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        match self {
-            WorkerResponse::Commit(_, _) => write!(f, "Commit"),
-            WorkerResponse::Prove(_) => write!(f, "Prove"),
-        }
-    }
-}
 
 pub struct WorkerPool {
     workers: Vec<Arc<RwLock<WorkerSocket>>>,
@@ -61,7 +25,7 @@ impl WorkerPool {
         checkpoints: Vec<(Checkpoint, usize)>,
         public_values: PublicValues<u32, u32>,
         shard_batch_size: usize,
-    ) -> Result<(Vec<Commitments>, Vec<Vec<ShardsPublicValues>>), WorkerError> {
+    ) -> Result<(Commitments, Vec<ShardsPublicValues>), WorkerError> {
         let requests = checkpoints
             .into_iter()
             .map(|(checkpoint, nb_checkpoints)| {
@@ -97,7 +61,7 @@ impl WorkerPool {
         public_values: PublicValues<u32, u32>,
         shard_batch_size: usize,
         challenger: Challenger,
-    ) -> Result<PartialProof, WorkerError> {
+    ) -> Result<PartialProofs, WorkerError> {
         let requests = checkpoints
             .into_iter()
             .map(|(checkpoint, nb_checkpoints)| {
@@ -183,7 +147,7 @@ impl WorkerPool {
                 continue;
             };
 
-            if let Err(_e) = worker.ping().await {
+            if let Err(_e) = worker.request(WorkerRequest::Ping).await {
                 log::warn!("Sp1 Distributed: Worker at {} is not reachable. Removing from the list for this task", ip);
 
                 continue;
